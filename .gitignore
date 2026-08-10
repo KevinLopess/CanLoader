@@ -3,6 +3,7 @@
 /Release/
 /build/
 /TestApplication/build/
+/Tests/c/build/
 
 # Generated embedded artifacts
 *.elf

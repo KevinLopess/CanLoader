@@ -1,0 +1,571 @@
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "boot_can.h"
+#include "boot_config.h"
+#include "boot_flash.h"
+#include "boot_image.h"
+#include "boot_metadata.h"
+#include "boot_platform.h"
+#include "boot_protocol.h"
+#include "bootloader.h"
+
+#define FAKE_RX_CAPACITY 32U
+#define FAKE_TX_CAPACITY 64U
+
+typedef struct
+{
+    uint32_t now_ms;
+    bool can_init_ok;
+    bool can_start_ok;
+    boot_can_status_t send_status;
+    boot_flash_status_t flash_init_status;
+    boot_flash_status_t erase_status;
+    boot_flash_status_t write_status;
+    boot_flash_status_t metadata_begin_status;
+    boot_flash_status_t metadata_mark_valid_status;
+    boot_flash_status_t metadata_mark_invalid_status;
+    bool image_valid;
+    bool metadata_read_ok;
+    boot_metadata_t metadata;
+
+    boot_can_frame_t rx_frames[FAKE_RX_CAPACITY];
+    size_t rx_head;
+    size_t rx_count;
+    boot_can_frame_t tx_frames[FAKE_TX_CAPACITY];
+    size_t tx_count;
+
+    size_t can_stop_calls;
+    size_t led_set_calls;
+    bool last_led_value;
+
+    size_t erase_calls;
+    boot_flash_region_t erase_region;
+    uint32_t erase_offset;
+    size_t erase_length;
+
+    size_t write_calls;
+    boot_flash_region_t write_region;
+    uint32_t write_offset;
+    size_t write_length;
+    uint8_t write_data[BOOT_TRANSFER_BLOCK_SIZE + 1U];
+
+    size_t metadata_begin_calls;
+    uint32_t metadata_begin_size;
+    uint32_t metadata_begin_crc;
+    size_t metadata_mark_valid_calls;
+    size_t metadata_mark_invalid_calls;
+} fake_environment_t;
+
+static fake_environment_t fake;
+
+static void fake_reset(void)
+{
+    fake = (fake_environment_t){
+        .can_init_ok = true,
+        .can_start_ok = true,
+        .send_status = BOOT_CAN_STATUS_OK,
+        .flash_init_status = BOOT_FLASH_STATUS_OK,
+        .erase_status = BOOT_FLASH_STATUS_OK,
+        .write_status = BOOT_FLASH_STATUS_OK,
+        .metadata_begin_status = BOOT_FLASH_STATUS_OK,
+        .metadata_mark_valid_status = BOOT_FLASH_STATUS_OK,
+        .metadata_mark_invalid_status = BOOT_FLASH_STATUS_OK,
+        .image_valid = false,
+        .metadata_read_ok = false
+    };
+}
+
+static void enqueue_rx(const boot_can_frame_t *frame)
+{
+    assert(frame != NULL);
+    assert(fake.rx_count < FAKE_RX_CAPACITY);
+    fake.rx_frames[fake.rx_count] = *frame;
+    ++fake.rx_count;
+}
+
+bool boot_can_init(void)
+{
+    return fake.can_init_ok;
+}
+
+bool boot_can_start(void)
+{
+    return fake.can_start_ok;
+}
+
+void boot_can_stop(void)
+{
+    ++fake.can_stop_calls;
+}
+
+boot_can_status_t boot_can_send(const boot_can_frame_t *frame)
+{
+    assert(frame != NULL);
+    if (fake.send_status == BOOT_CAN_STATUS_OK)
+    {
+        assert(fake.tx_count < FAKE_TX_CAPACITY);
+        fake.tx_frames[fake.tx_count] = *frame;
+        ++fake.tx_count;
+    }
+    return fake.send_status;
+}
+
+boot_can_status_t boot_can_receive(boot_can_frame_t *frame)
+{
+    assert(frame != NULL);
+    if (fake.rx_head == fake.rx_count)
+    {
+        return BOOT_CAN_STATUS_EMPTY;
+    }
+
+    *frame = fake.rx_frames[fake.rx_head];
+    ++fake.rx_head;
+    return BOOT_CAN_STATUS_OK;
+}
+
+bool boot_can_tx_idle(void)
+{
+    return true;
+}
+
+boot_flash_status_t boot_flash_init(void)
+{
+    return fake.flash_init_status;
+}
+
+boot_flash_status_t boot_flash_erase(boot_flash_region_t region,
+                                     uint32_t offset,
+                                     size_t length)
+{
+    ++fake.erase_calls;
+    fake.erase_region = region;
+    fake.erase_offset = offset;
+    fake.erase_length = length;
+    return fake.erase_status;
+}
+
+boot_flash_status_t boot_flash_write(boot_flash_region_t region,
+                                     uint32_t offset,
+                                     const uint8_t *data,
+                                     size_t length)
+{
+    assert(data != NULL);
+    assert(length <= sizeof(fake.write_data));
+    ++fake.write_calls;
+    fake.write_region = region;
+    fake.write_offset = offset;
+    fake.write_length = length;
+    memcpy(fake.write_data, data, length);
+    return fake.write_status;
+}
+
+bool boot_metadata_read(boot_metadata_t *metadata)
+{
+    assert(metadata != NULL);
+    if (!fake.metadata_read_ok)
+    {
+        return false;
+    }
+    *metadata = fake.metadata;
+    return true;
+}
+
+boot_flash_status_t boot_metadata_begin(uint32_t image_size, uint32_t image_crc32)
+{
+    ++fake.metadata_begin_calls;
+    fake.metadata_begin_size = image_size;
+    fake.metadata_begin_crc = image_crc32;
+    return fake.metadata_begin_status;
+}
+
+boot_flash_status_t boot_metadata_mark_valid(void)
+{
+    ++fake.metadata_mark_valid_calls;
+    return fake.metadata_mark_valid_status;
+}
+
+boot_flash_status_t boot_metadata_mark_invalid(void)
+{
+    ++fake.metadata_mark_invalid_calls;
+    return fake.metadata_mark_invalid_status;
+}
+
+bool boot_image_calculate_crc(uint32_t image_size, uint32_t *crc32)
+{
+    (void)image_size;
+    assert(crc32 != NULL);
+    *crc32 = fake.metadata.image_crc32;
+    return true;
+}
+
+bool boot_image_vectors_valid(uint32_t image_size,
+                              uint32_t *initial_stack_pointer,
+                              uint32_t *reset_handler)
+{
+    (void)image_size;
+    assert(initial_stack_pointer != NULL);
+    assert(reset_handler != NULL);
+    *initial_stack_pointer = BOOT_SRAM_START_ADDRESS;
+    *reset_handler = BOOT_APPLICATION_ADDRESS | UINT32_C(1);
+    return true;
+}
+
+bool boot_image_validate(boot_metadata_t *metadata)
+{
+    if (metadata != NULL)
+    {
+        *metadata = fake.metadata;
+    }
+    return fake.image_valid;
+}
+
+void boot_image_jump(void)
+{
+    abort();
+}
+
+uint32_t boot_platform_millis(void)
+{
+    return fake.now_ms;
+}
+
+void boot_platform_led_set(bool on)
+{
+    ++fake.led_set_calls;
+    fake.last_led_value = on;
+}
+
+static boot_can_frame_t make_request(boot_command_t command,
+                                     uint8_t session,
+                                     uint8_t parameter,
+                                     uint32_t value)
+{
+    boot_can_frame_t frame = {0};
+
+    frame.id = BOOT_CAN_COMMAND_ID;
+    frame.dlc = BOOT_CAN_MAX_DATA_LENGTH;
+    frame.data[0] = BOOT_PROTOCOL_VERSION;
+    frame.data[1] = (uint8_t)command;
+    frame.data[2] = session;
+    frame.data[3] = parameter;
+    boot_protocol_write_u32_le(&frame.data[4], value);
+    return frame;
+}
+
+static boot_can_frame_t make_begin_block(uint8_t session,
+                                         uint16_t block_index,
+                                         uint8_t block_sequence,
+                                         uint8_t block_length)
+{
+    const uint32_t value = (uint32_t)block_index |
+                           ((uint32_t)block_length << 16U);
+    return make_request(BOOT_COMMAND_BEGIN_BLOCK,
+                        session,
+                        block_sequence,
+                        value);
+}
+
+static boot_can_frame_t make_data(uint8_t session,
+                                  uint8_t block_sequence,
+                                  uint8_t frame_sequence,
+                                  const uint8_t *payload,
+                                  uint8_t payload_length)
+{
+    boot_can_frame_t frame = {0};
+
+    assert(payload != NULL);
+    assert(payload_length >= 1U);
+    assert(payload_length <= BOOT_DATA_BYTES_PER_FRAME);
+    frame.id = BOOT_CAN_DATA_ID;
+    frame.dlc = (uint8_t)(3U + payload_length);
+    frame.data[0] = session;
+    frame.data[1] = block_sequence;
+    frame.data[2] = frame_sequence;
+    memcpy(&frame.data[3], payload, payload_length);
+    return frame;
+}
+
+static boot_can_frame_t exchange(const boot_can_frame_t *request)
+{
+    const size_t tx_before = fake.tx_count;
+
+    enqueue_rx(request);
+    bootloader_task();
+    assert(fake.tx_count == tx_before);
+    bootloader_task();
+    assert(fake.tx_count == tx_before + 1U);
+    return fake.tx_frames[tx_before];
+}
+
+static void inject_without_response(const boot_can_frame_t *frame)
+{
+    const size_t tx_before = fake.tx_count;
+
+    enqueue_rx(frame);
+    bootloader_task();
+    bootloader_task();
+    assert(fake.tx_count == tx_before);
+}
+
+static void assert_response(const boot_can_frame_t *response,
+                            boot_response_kind_t kind,
+                            boot_command_t command,
+                            uint8_t session,
+                            uint32_t value)
+{
+    assert(response != NULL);
+    assert(response->id == BOOT_CAN_RESPONSE_ID);
+    assert(response->dlc == BOOT_CAN_MAX_DATA_LENGTH);
+    assert(response->data[0] == BOOT_PROTOCOL_VERSION);
+    assert(response->data[1] == (uint8_t)kind);
+    assert(response->data[2] == (uint8_t)command);
+    assert(response->data[3] == session);
+    assert(boot_protocol_read_u32_le(&response->data[4]) == value);
+}
+
+static void init_waiting_bootloader(void)
+{
+    fake_reset();
+    bootloader_init();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+}
+
+static void begin_receive(uint8_t session, uint32_t image_size, uint32_t crc32)
+{
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+
+    init_waiting_bootloader();
+
+    request = make_request(BOOT_COMMAND_START_UPDATE, session, 0U, image_size);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_START_UPDATE,
+                    session,
+                    BOOT_TRANSFER_BLOCK_SIZE);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_PREPARE_UPDATE);
+
+    request = make_request(BOOT_COMMAND_SET_IMAGE_CRC, session, 0U, crc32);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_SET_IMAGE_CRC,
+                    session,
+                    crc32);
+
+    request = make_request(BOOT_COMMAND_ERASE, session, 0U, 0U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_ERASE,
+                    session,
+                    image_size);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_RECEIVE);
+    assert(fake.metadata_begin_calls == 1U);
+    assert(fake.metadata_begin_size == image_size);
+    assert(fake.metadata_begin_crc == crc32);
+    assert(fake.erase_calls == 1U);
+    assert(fake.erase_region == BOOT_FLASH_REGION_APPLICATION);
+    assert(fake.erase_offset == 0U);
+    assert(fake.erase_length ==
+           ((image_size + BOOT_FLASH_PAGE_SIZE - 1U) / BOOT_FLASH_PAGE_SIZE) *
+               BOOT_FLASH_PAGE_SIZE);
+}
+
+static void test_start_update_bounds(void)
+{
+    static const uint8_t session = UINT8_C(0x11);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+
+    init_waiting_bootloader();
+
+    request = make_request(BOOT_COMMAND_START_UPDATE, session, 0U, 7U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_START_UPDATE,
+                    session,
+                    BOOT_ERROR_INVALID_SIZE);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+
+    request = make_request(BOOT_COMMAND_START_UPDATE,
+                           session,
+                           0U,
+                           BOOT_APPLICATION_MAX_SIZE + 1U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_START_UPDATE,
+                    session,
+                    BOOT_ERROR_INVALID_SIZE);
+    assert(fake.erase_calls == 0U);
+    assert(fake.metadata_begin_calls == 0U);
+}
+
+static void test_sequence_and_bounds_are_rejected(void)
+{
+    static const uint8_t session = UINT8_C(0x22);
+    static const uint8_t short_payload[] = {0xAAU};
+    static const uint8_t sequenced_payload[] = {0xAAU, 0xBBU, 0xCCU};
+    boot_can_frame_t frame;
+    boot_can_frame_t response;
+
+    begin_receive(session, 8U, UINT32_C(0x01020304));
+
+    frame = make_begin_block(session, 1U, 1U, 8U);
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_BEGIN_BLOCK,
+                    session,
+                    BOOT_ERROR_INVALID_SEQUENCE);
+
+    frame = make_begin_block(session, 0U, 0U, 7U);
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_BEGIN_BLOCK,
+                    session,
+                    BOOT_ERROR_INVALID_SEQUENCE);
+
+    frame = make_begin_block(session, 0U, 0U, 8U);
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_BEGIN_BLOCK,
+                    session,
+                    0U);
+
+    frame = make_data(session, 0U, 1U, short_payload, sizeof(short_payload));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_DATA,
+                    session,
+                    BOOT_ERROR_INVALID_SIZE);
+
+    frame = make_data(session,
+                      0U,
+                      1U,
+                      sequenced_payload,
+                      sizeof(sequenced_payload));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_DATA,
+                    session,
+                    BOOT_ERROR_INVALID_SEQUENCE);
+
+    frame = make_data(session, 0U, 2U, short_payload, sizeof(short_payload));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_DATA,
+                    session,
+                    BOOT_ERROR_INVALID_SEQUENCE);
+    assert(fake.write_calls == 0U);
+}
+
+static void test_duplicate_frames_and_blocks_are_idempotent(void)
+{
+    static const uint8_t session = UINT8_C(0x33);
+    static const uint8_t first_payload[] = {1U, 2U, 3U, 4U, 5U};
+    static const uint8_t bad_duplicate[] = {1U, 2U, 3U, 4U, 0xEEU};
+    static const uint8_t second_payload[] = {6U, 7U, 8U, 9U};
+    static const uint8_t expected_image[] = {
+        1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U
+    };
+    boot_can_frame_t frame;
+    boot_can_frame_t response;
+
+    begin_receive(session, sizeof(expected_image), UINT32_C(0xAABBCCDD));
+
+    frame = make_begin_block(session, 0U, 0U, sizeof(expected_image));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_BEGIN_BLOCK,
+                    session,
+                    0U);
+
+    frame = make_data(session, 0U, 0U, first_payload, sizeof(first_payload));
+    inject_without_response(&frame);
+    inject_without_response(&frame);
+    assert(fake.write_calls == 0U);
+
+    frame = make_data(session, 0U, 0U, bad_duplicate, sizeof(bad_duplicate));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_DATA,
+                    session,
+                    BOOT_ERROR_INVALID_SEQUENCE);
+    assert(fake.write_calls == 0U);
+
+    frame = make_data(session, 0U, 1U, second_payload, sizeof(second_payload));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_DATA,
+                    session,
+                    sizeof(expected_image));
+    assert(fake.write_calls == 1U);
+    assert(fake.write_region == BOOT_FLASH_REGION_APPLICATION);
+    assert(fake.write_offset == 0U);
+    assert(fake.write_length == sizeof(expected_image) + 1U);
+    assert(memcmp(fake.write_data, expected_image, sizeof(expected_image)) == 0);
+    assert(fake.write_data[sizeof(expected_image)] == UINT8_C(0xFF));
+
+    frame = make_begin_block(session, 0U, 0U, sizeof(expected_image));
+    response = exchange(&frame);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_BEGIN_BLOCK,
+                    session,
+                    sizeof(expected_image));
+    assert(fake.write_calls == 1U);
+}
+
+static void test_receive_timeout_invalidates_partial_update(void)
+{
+    static const uint8_t session = UINT8_C(0x44);
+    size_t tx_before_timeout;
+    boot_can_frame_t response;
+
+    begin_receive(session, 8U, UINT32_C(0x11223344));
+    tx_before_timeout = fake.tx_count;
+    fake.now_ms = BOOT_TRANSFER_TIMEOUT_MS;
+
+    bootloader_task();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+    assert(fake.metadata_mark_invalid_calls == 1U);
+    assert(fake.tx_count == tx_before_timeout);
+
+    bootloader_task();
+    assert(fake.tx_count == tx_before_timeout + 1U);
+    response = fake.tx_frames[tx_before_timeout];
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_ABORT,
+                    session,
+                    BOOT_ERROR_TIMEOUT);
+}
+
+int main(void)
+{
+    test_start_update_bounds();
+    test_sequence_and_bounds_are_rejected();
+    test_duplicate_frames_and_blocks_are_idempotent();
+    test_receive_timeout_invalidates_partial_update();
+
+    puts("test_bootloader: OK");
+    return 0;
+}

@@ -6,6 +6,7 @@ CC := $(TOOLCHAIN_PREFIX)gcc
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 SIZE := $(TOOLCHAIN_PREFIX)size
+PYTHON ?= python3
 
 CPU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 DEFINES := -DUSE_HAL_DRIVER -DSTM32F103xB
@@ -40,7 +41,7 @@ ASM_OBJECTS := $(addprefix $(BUILD_DIR)/,$(ASM_SOURCES:.s=.o))
 OBJECTS := $(C_OBJECTS) $(ASM_OBJECTS)
 DEPS := $(OBJECTS:.o=.d)
 
-.PHONY: all bootloader test-application clean
+.PHONY: all bootloader test-application test-c test-python test clean
 
 all: bootloader test-application
 
@@ -69,8 +70,17 @@ $(BUILD_DIR)/%.o: %.s
 test-application:
 	$(MAKE) -C TestApplication TOOLCHAIN=$(TOOLCHAIN_PREFIX) all
 
+test-c:
+	$(MAKE) -C Tests/c check
+
+test-python:
+	PYTHONPATH=Tools/canloader $(PYTHON) -m pytest -q Tests/python
+
+test: test-c test-python
+
 clean:
 	$(RM) -r build
 	$(MAKE) -C TestApplication clean
+	$(MAKE) -C Tests/c clean
 
 -include $(DEPS)
