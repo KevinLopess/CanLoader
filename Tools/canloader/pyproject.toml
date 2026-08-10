@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canloader"
+version = "0.1.0"
+description = "Host updater for the CanLoader STM32 CAN bootloader"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "python-can>=4.3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+]
+
+[project.scripts]
+canloader = "canloader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["canloader*"]
