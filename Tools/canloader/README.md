@@ -34,7 +34,10 @@ transfer timeout so a lost ERASE ACK can be retried while the session is valid.
 The update flow is `DISCOVER`, `INFO(APP_MAX_SIZE)`, `START_UPDATE`,
 `SET_IMAGE_CRC`, `ERASE`, block transfer, `FINISH`, and `VERIFY`, followed by
 `RUN_APPLICATION` when `--run` is supplied. CRC values use CRC-32/ISO-HDLC, as
-implemented by `zlib.crc32`.
+implemented by `zlib.crc32`. The client uses the block size returned by
+`START_UPDATE` (100 bytes on the STM32F1 target) and gives each stateless query
+a distinct correlation session so a delayed INFO ACK cannot satisfy the next
+selector.
 
 ## Tests
 

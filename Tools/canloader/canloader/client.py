@@ -91,6 +91,13 @@ class BootloaderClient:
         self.erase_timeout = erase_timeout
         self.retries = retries
         self.session = session
+        self._query_session = session
+
+    def _next_query_session(self) -> int:
+        self._query_session = (self._query_session % 0xFF) + 1
+        if self._query_session == self.session:
+            self._query_session = (self._query_session % 0xFF) + 1
+        return self._query_session
 
     def _send(self, frame: CanFrame) -> None:
         LOGGER.debug(
@@ -111,9 +118,14 @@ class BootloaderClient:
         command: Command,
         timeout: float,
         accept_value: ValuePredicate | None = None,
+        *,
+        expected_session: int | None = None,
     ) -> int:
         deadline = time.monotonic() + timeout
         expected_id = response_id(self.node)
+        response_session = (
+            self.session if expected_session is None else expected_session
+        )
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -141,7 +153,7 @@ class BootloaderClient:
                 continue
             if (
                 response.version != PROTOCOL_VERSION
-                or response.session != self.session
+                or response.session != response_session
             ):
                 continue
             if (
@@ -171,6 +183,7 @@ class BootloaderClient:
         timeout: float | None = None,
         retries: int | None = None,
         accept_value: ValuePredicate | None = None,
+        expected_session: int | None = None,
     ) -> int:
         response_timeout = self.timeout if timeout is None else timeout
         retry_count = self.retries if retries is None else retries
@@ -179,7 +192,10 @@ class BootloaderClient:
             self._send(frame)
             try:
                 return self._wait_for_response(
-                    command, response_timeout, accept_value
+                    command,
+                    response_timeout,
+                    accept_value,
+                    expected_session=expected_session,
                 )
             except ResponseTimeout:
                 if attempt == attempts:
@@ -193,11 +209,18 @@ class BootloaderClient:
         *,
         value: int = 0,
         timeout: float | None = None,
+        session: int | None = None,
     ) -> int:
+        request_session = self.session if session is None else session
         frame = encode_control_request(
-            self.node, command, self.session, value=value
+            self.node, command, request_session, value=value
         )
-        return self._exchange(frame, command, timeout=timeout)
+        return self._exchange(
+            frame,
+            command,
+            timeout=timeout,
+            expected_session=request_session,
+        )
 
     @staticmethod
     def _require_ack_value(command: Command, actual: int, expected: int) -> int:
@@ -208,14 +231,20 @@ class BootloaderClient:
         return actual
 
     def discover(self) -> int:
-        return self._request(Command.DISCOVER)
+        return self._request(
+            Command.DISCOVER, session=self._next_query_session()
+        )
 
     def info(self, selector: InfoSelector | int) -> int:
         try:
             selector_value = int(InfoSelector(selector))
         except ValueError as exc:
             raise ConfigurationError(f"unknown INFO selector {selector}") from exc
-        return self._request(Command.INFO, value=selector_value)
+        return self._request(
+            Command.INFO,
+            value=selector_value,
+            session=self._next_query_session(),
+        )
 
     def read_device_info(self) -> DeviceInfo:
         return DeviceInfo(
@@ -228,9 +257,12 @@ class BootloaderClient:
 
     def start_update(self, size: int) -> int:
         actual = self._request(Command.START_UPDATE, value=size)
-        return self._require_ack_value(
-            Command.START_UPDATE, actual, MAX_BLOCK_SIZE
-        )
+        if not 1 <= actual <= MAX_BLOCK_SIZE:
+            raise ProtocolError(
+                f"START_UPDATE ACK returned invalid block size {actual}; "
+                f"expected 1..{MAX_BLOCK_SIZE}"
+            )
+        return actual
 
     def set_image_crc(self, crc: int) -> int:
         actual = self._request(Command.SET_IMAGE_CRC, value=crc)
@@ -285,10 +317,11 @@ class BootloaderClient:
         self,
         block_index: int,
         block: bytes,
+        block_size: int,
         total_size: int,
         progress: ProgressCallback | None,
     ) -> None:
-        block_start = block_index * MAX_BLOCK_SIZE
+        block_start = block_index * block_size
         block_end = block_start + len(block)
         begin = encode_begin_block(
             self.node, self.session, block_index, len(block)
@@ -387,17 +420,18 @@ class BootloaderClient:
         image_crc = crc32_iso_hdlc(firmware)
         verified = False
         try:
-            self.start_update(len(firmware))
+            block_size = self.start_update(len(firmware))
             self.set_image_crc(image_crc)
             self.erase(len(firmware))
             if progress is not None:
                 progress(0, len(firmware))
             for block_index, offset in enumerate(
-                range(0, len(firmware), MAX_BLOCK_SIZE)
+                range(0, len(firmware), block_size)
             ):
                 self._transfer_block(
                     block_index,
-                    firmware[offset : offset + MAX_BLOCK_SIZE],
+                    firmware[offset : offset + block_size],
+                    block_size,
                     len(firmware),
                     progress,
                 )

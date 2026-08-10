@@ -220,7 +220,8 @@ static void handle_start_update(const boot_protocol_request_t *request, uint32_t
         return;
     }
 
-    if ((context.state != BOOTLOADER_STATE_WAIT_HOST) &&
+    if ((context.state != BOOTLOADER_STATE_BOOT_WINDOW) &&
+        (context.state != BOOTLOADER_STATE_WAIT_HOST) &&
         (context.state != BOOTLOADER_STATE_READY))
     {
         queue_nack(request->command, request->session, BOOT_ERROR_INVALID_STATE);
@@ -286,6 +287,7 @@ static void handle_erase(const boot_protocol_request_t *request, uint32_t now)
     }
 
     set_state(BOOTLOADER_STATE_ERASE, now);
+    context.app_valid = false;
     status = boot_metadata_begin(context.expected_size, context.expected_crc32);
     if (status != BOOT_FLASH_STATUS_OK)
     {
@@ -295,7 +297,6 @@ static void handle_erase(const boot_protocol_request_t *request, uint32_t now)
         return;
     }
 
-    context.app_valid = false;
     erase_length = ((context.expected_size + BOOT_FLASH_PAGE_SIZE - 1U) /
                     BOOT_FLASH_PAGE_SIZE) * BOOT_FLASH_PAGE_SIZE;
     status = boot_flash_erase(BOOT_FLASH_REGION_APPLICATION, 0U, erase_length);
@@ -650,11 +651,6 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
     boot_error_t error;
     const bool broadcast = frame->id == BOOT_CAN_BROADCAST_ID;
 
-    if (context.state == BOOTLOADER_STATE_BOOT_WINDOW)
-    {
-        set_state(BOOTLOADER_STATE_WAIT_HOST, now);
-    }
-
     if (!boot_protocol_decode_request(frame, &request, &error))
     {
         const boot_command_t command = (frame->dlc > 1U) ?
@@ -729,6 +725,13 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
         default:
             queue_nack(request.command, request.session, BOOT_ERROR_INVALID_COMMAND);
             break;
+    }
+
+    if ((context.state == BOOTLOADER_STATE_BOOT_WINDOW) &&
+        context.response_pending &&
+        (context.pending_response.data[1] == (uint8_t)BOOT_RESPONSE_ACK))
+    {
+        set_state(BOOTLOADER_STATE_WAIT_HOST, now);
     }
 }
 
@@ -807,6 +810,7 @@ static void service_transfer_timeout(uint32_t now)
         }
         clear_transfer();
         set_state(BOOTLOADER_STATE_WAIT_HOST, now);
+        context.response_pending = false;
         queue_nack(BOOT_COMMAND_ABORT, session, BOOT_ERROR_TIMEOUT);
     }
 }
@@ -897,9 +901,9 @@ void bootloader_task(void)
     }
 
     if ((context.state == BOOTLOADER_STATE_RUN_APPLICATION) &&
-        !context.response_pending &&
-        (elapsed_ms(now, context.state_started_ms) >= BOOT_RUN_RESPONSE_DELAY_MS) &&
-        (boot_can_tx_idle() ||
+        (((!context.response_pending) &&
+          (elapsed_ms(now, context.state_started_ms) >= BOOT_RUN_RESPONSE_DELAY_MS) &&
+          boot_can_tx_idle()) ||
          (elapsed_ms(now, context.state_started_ms) >= BOOT_RUN_RESPONSE_TIMEOUT_MS)))
     {
         boot_can_stop();

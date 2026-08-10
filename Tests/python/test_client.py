@@ -111,6 +111,25 @@ def test_unrelated_and_stale_responses_are_ignored() -> None:
     assert client.discover() == 4
 
 
+def test_info_queries_use_distinct_sessions_to_reject_late_ack() -> None:
+    calls = 0
+
+    def responder(frame: CanFrame, bus: FakeBus) -> None:
+        nonlocal calls
+        calls += 1
+        value = 0x11111111 if calls == 1 else 0x22222222
+        bus.queue(control_ack(frame, value))
+        if calls == 1:
+            bus.queue(control_ack(frame, value))
+
+    bus = FakeBus(responder)
+    client = BootloaderClient(bus, session=8)
+
+    assert client.info(InfoSelector.CAPABILITIES) == 0x11111111
+    assert client.info(InfoSelector.APP_BASE) == 0x22222222
+    assert bus.sent[0].data[2] != bus.sent[1].data[2]
+
+
 def test_asynchronous_session_timeout_is_fatal_immediately() -> None:
     def responder(frame: CanFrame, bus: FakeBus) -> None:
         bus.queue(
@@ -133,10 +152,12 @@ class UpdateDevice:
         self,
         app_max_size: int = 4096,
         *,
+        block_size: int = MAX_BLOCK_SIZE,
         lose_first_data_ack: bool = False,
         corrupt_verify: bool = False,
     ) -> None:
         self.app_max_size = app_max_size
+        self.block_size = block_size
         self.lose_first_data_ack = lose_first_data_ack
         self.corrupt_verify = corrupt_verify
         self.expected_size = 0
@@ -163,13 +184,13 @@ class UpdateDevice:
             bus.queue(control_ack(frame, self.app_max_size))
         elif command is Command.START_UPDATE:
             self.expected_size = int.from_bytes(frame.data[4:8], "little")
-            bus.queue(control_ack(frame, MAX_BLOCK_SIZE))
+            bus.queue(control_ack(frame, self.block_size))
         elif command is Command.SET_IMAGE_CRC:
             self.expected_crc = int.from_bytes(frame.data[4:8], "little")
             bus.queue(control_ack(frame, self.expected_crc))
         elif command is Command.BEGIN_BLOCK:
             block_index = int.from_bytes(frame.data[4:6], "little")
-            block_start = block_index * MAX_BLOCK_SIZE
+            block_start = block_index * self.block_size
             assert frame.data[3] == (block_index & 0xFF)
             if self.committed < block_start:
                 raise AssertionError("host skipped a block")
@@ -242,20 +263,29 @@ def test_begin_block_rejects_advanced_committed_count() -> None:
         FakeBus(responder), timeout=0.001, retries=0, session=11
     )
     with pytest.raises(BlockTransferError, match="block 0"):
-        client._transfer_block(0, b"12345678", 8, None)
+        client._transfer_block(0, b"12345678", MAX_BLOCK_SIZE, 8, None)
 
 
-def test_start_update_requires_exact_block_size_ack() -> None:
+def test_start_update_accepts_negotiated_block_size() -> None:
     def responder(frame: CanFrame, bus: FakeBus) -> None:
         bus.queue(control_ack(frame, MAX_BLOCK_SIZE - 1))
 
     client = BootloaderClient(FakeBus(responder), session=11)
-    with pytest.raises(ProtocolError, match="expected exactly 100"):
+    assert client.start_update(1024) == MAX_BLOCK_SIZE - 1
+
+
+@pytest.mark.parametrize("block_size", [0, MAX_BLOCK_SIZE + 1])
+def test_start_update_rejects_invalid_negotiated_block_size(block_size: int) -> None:
+    def responder(frame: CanFrame, bus: FakeBus) -> None:
+        bus.queue(control_ack(frame, block_size))
+
+    client = BootloaderClient(FakeBus(responder), session=11)
+    with pytest.raises(ProtocolError, match="invalid block size"):
         client.start_update(1024)
 
 
 def test_full_update_workflow_and_progress() -> None:
-    device = UpdateDevice()
+    device = UpdateDevice(block_size=96)
     bus = FakeBus(device)
     client = BootloaderClient(bus, retries=1, session=12)
     image = bytes(range(113))
@@ -285,7 +315,7 @@ def test_full_update_workflow_and_progress() -> None:
         Command.VERIFY,
         Command.RUN_APPLICATION,
     ]
-    assert progress == [(0, 113), (100, 113), (113, 113)]
+    assert progress == [(0, 113), (96, 113), (113, 113)]
 
 
 def test_update_validates_minimum_and_device_maximum_size() -> None:

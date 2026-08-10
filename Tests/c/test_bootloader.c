@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +64,9 @@ typedef struct
 } fake_environment_t;
 
 static fake_environment_t fake;
+static jmp_buf jump_environment;
+static bool capture_jump;
+static size_t jump_calls;
 
 static void fake_reset(void)
 {
@@ -79,6 +83,8 @@ static void fake_reset(void)
         .image_valid = false,
         .metadata_read_ok = false
     };
+    capture_jump = false;
+    jump_calls = 0U;
 }
 
 static void enqueue_rx(const boot_can_frame_t *frame)
@@ -227,6 +233,11 @@ bool boot_image_validate(boot_metadata_t *metadata)
 
 void boot_image_jump(void)
 {
+    ++jump_calls;
+    if (capture_jump)
+    {
+        longjmp(jump_environment, 1);
+    }
     abort();
 }
 
@@ -559,12 +570,159 @@ static void test_receive_timeout_invalidates_partial_update(void)
                     BOOT_ERROR_TIMEOUT);
 }
 
+static void test_timeout_replaces_a_stuck_pending_response(void)
+{
+    static const uint8_t session = UINT8_C(0x45);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+    size_t tx_before_timeout;
+
+    begin_receive(session, 8U, UINT32_C(0x55667788));
+    tx_before_timeout = fake.tx_count;
+    fake.send_status = BOOT_CAN_STATUS_BUSY;
+
+    request = make_begin_block(session, 0U, 0U, 8U);
+    enqueue_rx(&request);
+    bootloader_task();
+    assert(fake.tx_count == tx_before_timeout);
+
+    fake.now_ms = BOOT_TRANSFER_TIMEOUT_MS;
+    bootloader_task();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+    assert(fake.metadata_mark_invalid_calls == 1U);
+    assert(fake.tx_count == tx_before_timeout);
+
+    fake.send_status = BOOT_CAN_STATUS_OK;
+    bootloader_task();
+    assert(fake.tx_count == tx_before_timeout + 1U);
+    response = fake.tx_frames[tx_before_timeout];
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_ABORT,
+                    session,
+                    BOOT_ERROR_TIMEOUT);
+}
+
+static void test_boot_window_ignores_malformed_and_forbidden_broadcast(void)
+{
+    static const uint8_t session = UINT8_C(0x46);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+    size_t tx_before;
+
+    fake_reset();
+    fake.image_valid = true;
+    bootloader_init();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    request = make_request(BOOT_COMMAND_DISCOVER, session, 0U, 0U);
+    request.dlc = BOOT_CAN_MAX_DATA_LENGTH - 1U;
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_DISCOVER,
+                    session,
+                    BOOT_ERROR_MALFORMED_FRAME);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    request = make_request(BOOT_COMMAND_START_UPDATE, session, 0U, 8U);
+    request.id = BOOT_CAN_BROADCAST_ID;
+    tx_before = fake.tx_count;
+    enqueue_rx(&request);
+    bootloader_task();
+    assert(fake.tx_count == tx_before);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    request = make_request(BOOT_COMMAND_DISCOVER, session, 0U, 0U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_DISCOVER,
+                    session,
+                    UINT32_C(1) |
+                        (BOOT_NODE_ID << 8U) |
+                        ((uint32_t)BOOT_PROTOCOL_VERSION << 16U) |
+                        ((uint32_t)BOOT_TARGET_CODE << 24U));
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+}
+
+static void test_metadata_begin_failure_clears_advertised_app_validity(void)
+{
+    static const uint8_t session = UINT8_C(0x47);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+    uint32_t capabilities;
+
+    fake_reset();
+    fake.image_valid = true;
+    fake.metadata.image_crc32 = UINT32_C(0x12345678);
+    bootloader_init();
+
+    request = make_request(BOOT_COMMAND_START_UPDATE, session, 0U, 8U);
+    (void)exchange(&request);
+    request = make_request(BOOT_COMMAND_SET_IMAGE_CRC,
+                           session,
+                           0U,
+                           UINT32_C(0x87654321));
+    (void)exchange(&request);
+
+    fake.metadata_begin_status = BOOT_FLASH_STATUS_ERASE;
+    request = make_request(BOOT_COMMAND_ERASE, session, 0U, 0U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_NACK,
+                    BOOT_COMMAND_ERASE,
+                    session,
+                    BOOT_ERROR_FLASH_ERASE);
+
+    request = make_request(BOOT_COMMAND_DISCOVER, session, 0U, 0U);
+    response = exchange(&request);
+    capabilities = boot_protocol_read_u32_le(&response.data[4]);
+    assert((capabilities & UINT32_C(1)) == 0U);
+}
+
+static void test_run_timeout_forces_handoff_when_ack_cannot_be_queued(void)
+{
+    static const uint8_t session = UINT8_C(0x55);
+    boot_can_frame_t request;
+
+    fake_reset();
+    fake.image_valid = true;
+    fake.metadata.image_crc32 = UINT32_C(0x89ABCDEF);
+    bootloader_init();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    fake.send_status = BOOT_CAN_STATUS_BUSY;
+    request = make_request(BOOT_COMMAND_RUN_APPLICATION, session, 0U, 0U);
+    enqueue_rx(&request);
+    bootloader_task();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_RUN_APPLICATION);
+    assert(fake.tx_count == 0U);
+
+    fake.now_ms = BOOT_RUN_RESPONSE_TIMEOUT_MS;
+    capture_jump = true;
+    if (setjmp(jump_environment) == 0)
+    {
+        bootloader_task();
+        assert(false);
+    }
+    capture_jump = false;
+
+    assert(jump_calls == 1U);
+    assert(fake.can_stop_calls == 1U);
+    assert(fake.tx_count == 0U);
+}
+
 int main(void)
 {
     test_start_update_bounds();
     test_sequence_and_bounds_are_rejected();
     test_duplicate_frames_and_blocks_are_idempotent();
     test_receive_timeout_invalidates_partial_update();
+    test_timeout_replaces_a_stuck_pending_response();
+    test_boot_window_ignores_malformed_and_forbidden_broadcast();
+    test_metadata_begin_failure_clears_advertised_app_validity();
+    test_run_timeout_forces_handoff_when_ack_cannot_be_queued();
 
     puts("test_bootloader: OK");
     return 0;

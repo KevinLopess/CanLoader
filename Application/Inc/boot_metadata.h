@@ -6,12 +6,19 @@
 
 #include "boot_flash.h"
 
+typedef enum
+{
+    BOOT_METADATA_STATE_UPDATING = 0,
+    BOOT_METADATA_STATE_VALID,
+    BOOT_METADATA_STATE_INVALID
+} boot_metadata_state_t;
+
 typedef struct
 {
     uint32_t image_size;
     uint32_t image_crc32;
     uint32_t image_version;
-    uint32_t state;
+    boot_metadata_state_t state;
 } boot_metadata_t;
 
 bool boot_metadata_read(boot_metadata_t *metadata);
