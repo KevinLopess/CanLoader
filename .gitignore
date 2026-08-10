@@ -1,0 +1,30 @@
+# STM32CubeIDE generated output
+/Debug/
+/Release/
+/build/
+/TestApplication/build/
+
+# Generated embedded artifacts
+*.elf
+*.map
+*.list
+*.o
+*.d
+*.su
+*.cyclo
+*.bin
+*.hex
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# Local editor and research input supplied outside the source tree
+/.vscode/
+/TCCKevinLopes.pdf

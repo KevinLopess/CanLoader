@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bootloader.h"
 
 /* USER CODE END Includes */
 
@@ -90,6 +91,7 @@ int main(void)
   MX_GPIO_Init();
   MX_CAN_Init();
   /* USER CODE BEGIN 2 */
+  bootloader_init();
 
   /* USER CODE END 2 */
 
@@ -97,6 +99,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    bootloader_task();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -165,7 +168,7 @@ static void MX_CAN_Init(void)
   hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_4TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
-  hcan.Init.AutoBusOff = DISABLE;
+  hcan.Init.AutoBusOff = ENABLE;
   hcan.Init.AutoWakeUp = DISABLE;
   hcan.Init.AutoRetransmission = ENABLE;
   hcan.Init.ReceiveFifoLocked = DISABLE;
