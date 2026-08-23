@@ -1,33 +1,74 @@
-"""Wire-level constants shared by the CanLoader host modules."""
+"""Wire-level constants for the CanLoader J1939 protocol profile."""
 
 from enum import IntEnum
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+TARGET_CODE = 0xF1
 
-BROADCAST_ID = 0x500
-RESPONSE_ID_BASE = 0x580
-COMMAND_ID_BASE = 0x600
-DATA_ID_BASE = 0x700
+# J1939 addresses.
+NULL_ADDRESS = 0xFE
+GLOBAL_ADDRESS = 0xFF
+MIN_UNICAST_ADDRESS = 0x00
+MAX_UNICAST_ADDRESS = 0xFD
+DEFAULT_TARGET_ADDRESS = 0x80
+DEFAULT_SOURCE_ADDRESS = 0xF9
 
-MIN_NODE_ID = 1
-MAX_NODE_ID = 0x7F
-MAX_BLOCK_SIZE = 100
-MAX_DATA_PAYLOAD = 5
+# Lab/service-tool NAME. Deployments should pass an assigned unique NAME.
+DEFAULT_SOURCE_NAME = 0xA000000000000001
+
+# Parameter group numbers used by this profile.
+PGN_DM16 = 0x00D700
+PGN_DM15 = 0x00D800
+PGN_DM14 = 0x00D900
+PGN_REQUEST = 0x00EA00
+PGN_TP_DT = 0x00EB00
+PGN_TP_CM = 0x00EC00
+PGN_ADDRESS_CLAIMED = 0x00EE00
+PGN_PROPRIETARY_A = 0x00EF00
+PGN_COMMANDED_ADDRESS = 0x00FED8
+
+DEFAULT_PRIORITY = 6
+ADDRESS_CLAIM_PRIORITY = 6
+ADDRESS_CLAIM_WAIT = 0.250
+AAC_FALLBACK_ADDRESSES = tuple(range(128, 248))
+
+MAX_TP_PACKETS = 0xFF
+TP_DATA_BYTES_PER_PACKET = 7
+MAX_TP_PAYLOAD = MAX_TP_PACKETS * TP_DATA_BYTES_PER_PACKET
+MAX_DM16_DATA = MAX_TP_PAYLOAD - 1
+UPDATE_BLOCK_SIZE = 100
+FLASH_ERASE_BLOCK_SIZE = 1024
 MIN_IMAGE_SIZE = 8
 
 
+class TpControl(IntEnum):
+    RTS = 0x10
+    CTS = 0x11
+    EOM_ACK = 0x13
+    BAM = 0x20
+    ABORT = 0xFF
+
+
+class TpAbortReason(IntEnum):
+    BUSY = 1
+    RESOURCES = 2
+    TIMEOUT = 3
+    CTS_WHILE_TRANSFER = 4
+    MAX_RETRANSMIT = 5
+    UNEXPECTED_DATA = 6
+    BAD_SEQUENCE = 7
+    DUPLICATE_SEQUENCE = 8
+    TOTAL_SIZE = 9
+    OTHER = 250
+
+
 class Command(IntEnum):
-    DISCOVER = 0x01
+    IDENTIFY = 0x01
     INFO = 0x02
-    PROBE = 0x03
-    SET_NODE_ID = 0x04
     START_UPDATE = 0x10
     SET_IMAGE_CRC = 0x11
-    ERASE = 0x12
-    BEGIN_BLOCK = 0x20
-    DATA = 0x21
-    FINISH = 0x30
+    FINALIZE = 0x30
     VERIFY = 0x31
     RUN_APPLICATION = 0x32
     ENTER_BOOTLOADER = 0x33
@@ -48,18 +89,32 @@ class InfoSelector(IntEnum):
     UID_WORD_0 = 5
     UID_WORD_1 = 6
     UID_WORD_2 = 7
+    NAME_LOW = 8
+    NAME_HIGH = 9
+    SOURCE_ADDRESS = 10
 
 
-class ProbeSelector(IntEnum):
-    CAPABILITIES = 0
-    UID_WORD_0 = 1
-    UID_WORD_1 = 2
-    UID_WORD_2 = 3
+class Dm14Command(IntEnum):
+    ERASE = 0
+    READ = 1
+    WRITE = 2
+    STATUS = 3
+    OPERATION_COMPLETED = 4
+    OPERATION_FAILED = 5
+    BOOT_LOAD = 6
+    EDCP = 7
 
 
-CAPABILITY_APPLICATION_VALID = 1 << 0
-CAPABILITY_UPDATE_ACTIVE = 1 << 1
-CAPABILITY_APPLICATION_RUNNING = 1 << 2
+class Dm15Status(IntEnum):
+    PROCEED = 0
+    BUSY = 1
+    OPERATION_COMPLETED = 4
+    OPERATION_FAILED = 5
+
+
+class PointerType(IntEnum):
+    DIRECT = 0
+    INDIRECT = 1
 
 
 class NackCode(IntEnum):
@@ -79,6 +134,8 @@ class NackCode(IntEnum):
     SESSION = 13
     CAN = 14
     INTERNAL = 15
+    BUSY = 16
+    UNSUPPORTED_OPERATION = 17
 
 
 NACK_DESCRIPTIONS: dict[NackCode, str] = {
@@ -94,8 +151,21 @@ NACK_DESCRIPTIONS: dict[NackCode, str] = {
     NackCode.TIMEOUT: "device operation timed out",
     NackCode.UNSUPPORTED_VERSION: "unsupported protocol version",
     NackCode.INVALID_APPLICATION: "application image is invalid",
-    NackCode.MALFORMED_FRAME: "malformed CAN frame",
+    NackCode.MALFORMED_FRAME: "malformed frame",
     NackCode.SESSION: "session does not match",
     NackCode.CAN: "device CAN error",
     NackCode.INTERNAL: "device internal error",
+    NackCode.BUSY: "device is busy",
+    NackCode.UNSUPPORTED_OPERATION: "operation is not supported",
 }
+
+
+CAPABILITY_APPLICATION_VALID = 1 << 0
+CAPABILITY_UPDATE_ACTIVE = 1 << 1
+CAPABILITY_APPLICATION_RUNNING = 1 << 2
+CAPABILITY_J1939 = 1 << 3
+CAPABILITY_ADDRESS_CLAIM = 1 << 4
+CAPABILITY_TP_RX = 1 << 5
+REQUIRED_PROFILE_CAPABILITIES = (
+    CAPABILITY_J1939 | CAPABILITY_ADDRESS_CLAIM | CAPABILITY_TP_RX
+)

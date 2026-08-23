@@ -1,5 +1,6 @@
-"""High-level, retrying CanLoader client."""
+"""High-level CanLoader v2 client and J1939 network scanner."""
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 import logging
@@ -7,23 +8,37 @@ import math
 import secrets
 import time
 
+from .address_claim import AddressClaimManager
 from .bus import CanBus
 from .constants import (
+    AAC_FALLBACK_ADDRESSES,
     CAPABILITY_APPLICATION_RUNNING,
     CAPABILITY_APPLICATION_VALID,
     CAPABILITY_UPDATE_ACTIVE,
-    MAX_BLOCK_SIZE,
-    MAX_DATA_PAYLOAD,
+    DEFAULT_SOURCE_ADDRESS,
+    DEFAULT_SOURCE_NAME,
+    DEFAULT_TARGET_ADDRESS,
+    FLASH_ERASE_BLOCK_SIZE,
     MIN_IMAGE_SIZE,
+    NULL_ADDRESS,
+    PGN_ADDRESS_CLAIMED,
+    PGN_COMMANDED_ADDRESS,
+    PGN_DM15,
+    PGN_DM16,
     PROTOCOL_VERSION,
+    REQUIRED_PROFILE_CAPABILITIES,
+    TARGET_CODE,
+    UPDATE_BLOCK_SIZE,
     Command,
+    Dm14Command,
+    Dm15Status,
     InfoSelector,
     NackCode,
-    ProbeSelector,
     ResponseKind,
 )
 from .crc import crc32_iso_hdlc
 from .errors import (
+    AddressClaimError,
     BlockTransferError,
     CanBusError,
     ConfigurationError,
@@ -31,19 +46,27 @@ from .errors import (
     NackError,
     ProtocolError,
     ResponseTimeout,
+    TargetIdentityError,
+    TransportError,
     VerificationError,
 )
-from .protocol import (
+from .j1939 import (
     CanFrame,
-    decode_response,
-    encode_broadcast_request,
-    encode_begin_block,
-    encode_control_request,
-    encode_data_frame,
-    node_from_response_id,
-    response_id,
-    validate_node,
+    J1939Name,
+    identifier_from_frame,
+    validate_unicast_address,
 )
+from .protocol import (
+    Dm15,
+    decode_dm15,
+    decode_response,
+    encode_commanded_address_payload,
+    encode_control_request,
+    encode_dm14,
+    encode_dm16,
+    encode_dm16_transport_payload,
+)
+from .transport import J1939Transport
 
 
 LOGGER = logging.getLogger(__name__)
@@ -51,8 +74,39 @@ ProgressCallback = Callable[[int, int], None]
 ValuePredicate = Callable[[int], bool]
 
 
+def _validate_identify_capabilities(
+    capabilities: int, expected_address: int
+) -> int:
+    advertised_address = (capabilities >> 8) & 0xFF
+    advertised_version = (capabilities >> 16) & 0xFF
+    advertised_target = (capabilities >> 24) & 0xFF
+    if advertised_address != expected_address:
+        raise ProtocolError(
+            f"IDENTIFY advertised address 0x{advertised_address:02X}; "
+            f"expected 0x{expected_address:02X}"
+        )
+    if advertised_version != PROTOCOL_VERSION:
+        raise ProtocolError(
+            f"IDENTIFY advertised protocol {advertised_version}; "
+            f"expected {PROTOCOL_VERSION}"
+        )
+    if advertised_target != TARGET_CODE:
+        raise ProtocolError(
+            f"IDENTIFY advertised target code 0x{advertised_target:02X}; "
+            f"expected 0x{TARGET_CODE:02X}"
+        )
+    missing = REQUIRED_PROFILE_CAPABILITIES & ~capabilities
+    if missing:
+        raise ProtocolError(
+            f"IDENTIFY is missing required profile capabilities 0x{missing:02X}"
+        )
+    return capabilities
+
+
 @dataclass(frozen=True, slots=True)
 class DeviceInfo:
+    address: int
+    name: J1939Name
     capabilities: int
     app_base: int
     app_max_size: int
@@ -67,147 +121,37 @@ class DeviceInfo:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveredDevice:
-    node: int
-    capabilities: int
-    uid_words: tuple[int, int, int] | None
+    address: int
+    name: J1939Name
+    capabilities: int | None = None
 
     @property
-    def uid(self) -> str | None:
-        if self.uid_words is None:
+    def is_canloader(self) -> bool:
+        return self.capabilities is not None
+
+    @property
+    def target_code(self) -> int | None:
+        if self.capabilities is None:
             return None
-        return "".join(f"{word:08X}" for word in reversed(self.uid_words))
-
-    @property
-    def target_code(self) -> int:
         return (self.capabilities >> 24) & 0xFF
 
     @property
-    def protocol_version(self) -> int:
+    def protocol_version(self) -> int | None:
+        if self.capabilities is None:
+            return None
         return (self.capabilities >> 16) & 0xFF
 
     @property
     def application_valid(self) -> bool:
-        return bool(self.capabilities & CAPABILITY_APPLICATION_VALID)
+        return bool((self.capabilities or 0) & CAPABILITY_APPLICATION_VALID)
 
     @property
     def update_active(self) -> bool:
-        return bool(self.capabilities & CAPABILITY_UPDATE_ACTIVE)
+        return bool((self.capabilities or 0) & CAPABILITY_UPDATE_ACTIVE)
 
     @property
     def application_running(self) -> bool:
-        return bool(self.capabilities & CAPABILITY_APPLICATION_RUNNING)
-
-
-class NetworkScanner:
-    def __init__(
-        self,
-        bus: CanBus,
-        *,
-        timeout: float = 0.2,
-        session: int | None = None,
-    ) -> None:
-        if not math.isfinite(timeout) or timeout <= 0:
-            raise ConfigurationError("scan timeout must be greater than zero")
-        if session is None:
-            session = secrets.randbelow(0xFF) + 1
-        if not 1 <= session <= 0xFF:
-            raise ConfigurationError("session must be between 1 and 255")
-        self.bus = bus
-        self.timeout = timeout
-        self._session = session
-
-    def _next_session(self) -> int:
-        self._session = (self._session % 0xFF) + 1
-        return self._session
-
-    def _collect(self, selector: ProbeSelector) -> dict[int, int]:
-        session = self._next_session()
-        frame = encode_broadcast_request(
-            Command.PROBE,
-            session,
-            byte3=int(selector),
-        )
-        LOGGER.debug(
-            "TX %03X [%d] %s",
-            frame.arbitration_id,
-            frame.dlc,
-            frame.data.hex(" "),
-        )
-        try:
-            self.bus.send(frame)
-        except CanBusError:
-            raise
-        except Exception as exc:
-            raise CanBusError(f"failed to send CAN frame: {exc}") from exc
-
-        values: dict[int, int] = {}
-        deadline = time.monotonic() + self.timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            try:
-                response_frame = self.bus.recv(remaining)
-            except CanBusError:
-                raise
-            except Exception as exc:
-                raise CanBusError(f"failed to receive CAN frame: {exc}") from exc
-            if response_frame is None:
-                break
-            LOGGER.debug(
-                "RX %03X [%d] %s",
-                response_frame.arbitration_id,
-                response_frame.dlc,
-                response_frame.data.hex(" "),
-            )
-            if response_frame.is_extended_id:
-                continue
-            try:
-                node = node_from_response_id(response_frame.arbitration_id)
-                response = decode_response(response_frame)
-            except (ConfigurationError, ProtocolError):
-                continue
-            if (
-                response.version != PROTOCOL_VERSION
-                or response.kind is not ResponseKind.ACK
-                or response.command != int(Command.PROBE)
-                or response.session != session
-            ):
-                continue
-            values[node] = response.value
-        return values
-
-    def scan(self) -> list[DiscoveredDevice]:
-        capabilities = self._collect(ProbeSelector.CAPABILITIES)
-        uid_values = [
-            self._collect(ProbeSelector.UID_WORD_0),
-            self._collect(ProbeSelector.UID_WORD_1),
-            self._collect(ProbeSelector.UID_WORD_2),
-        ]
-        devices: list[DiscoveredDevice] = []
-        for node, capability_word in sorted(capabilities.items()):
-            advertised_node = (capability_word >> 8) & 0xFF
-            if advertised_node != node:
-                LOGGER.warning(
-                    "ignoring node %d with mismatched advertised node %d",
-                    node,
-                    advertised_node,
-                )
-                continue
-            words = tuple(values.get(node) for values in uid_values)
-            uid_words = (
-                None
-                if any(word is None for word in words)
-                else (int(words[0]), int(words[1]), int(words[2]))
-            )
-            devices.append(
-                DiscoveredDevice(
-                    node=node,
-                    capabilities=capability_word,
-                    uid_words=uid_words,
-                )
-            )
-        return devices
+        return bool((self.capabilities or 0) & CAPABILITY_APPLICATION_RUNNING)
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,48 +160,16 @@ class UpdateResult:
     crc: int
     verified_crc: int
     ran_application: bool
+    target_name: J1939Name
 
 
-class BootloaderClient:
-    def __init__(
-        self,
-        bus: CanBus,
-        *,
-        node: int = 1,
-        timeout: float = 0.5,
-        erase_timeout: float = 4.0,
-        retries: int = 3,
-        session: int | None = None,
-    ) -> None:
-        validate_node(node)
-        if not math.isfinite(timeout) or timeout <= 0:
-            raise ConfigurationError("timeout must be greater than zero")
-        if not math.isfinite(erase_timeout) or erase_timeout <= 0:
-            raise ConfigurationError("erase timeout must be greater than zero")
-        if retries < 0:
-            raise ConfigurationError("retries cannot be negative")
-        if session is None:
-            session = secrets.randbelow(0xFF) + 1
-        if not 1 <= session <= 0xFF:
-            raise ConfigurationError("session must be between 1 and 255")
-
+class _RawEndpoint:
+    def __init__(self, bus: CanBus) -> None:
         self.bus = bus
-        self.node = node
-        self.timeout = timeout
-        self.erase_timeout = erase_timeout
-        self.retries = retries
-        self.session = session
-        self._query_session = session
 
-    def _next_query_session(self) -> int:
-        self._query_session = (self._query_session % 0xFF) + 1
-        if self._query_session == self.session:
-            self._query_session = (self._query_session % 0xFF) + 1
-        return self._query_session
-
-    def _send(self, frame: CanFrame) -> None:
+    def send(self, frame: CanFrame) -> None:
         LOGGER.debug(
-            "TX %03X [%d] %s",
+            "TX %08X [%d] %s",
             frame.arbitration_id,
             frame.dlc,
             frame.data.hex(" "),
@@ -269,47 +181,328 @@ class BootloaderClient:
         except Exception as exc:
             raise CanBusError(f"failed to send CAN frame: {exc}") from exc
 
-    def _wait_for_response(
-        self,
-        command: Command,
-        timeout: float,
-        accept_value: ValuePredicate | None = None,
-        *,
-        expected_session: int | None = None,
-    ) -> int:
-        deadline = time.monotonic() + timeout
-        expected_id = response_id(self.node)
-        response_session = (
-            self.session if expected_session is None else expected_session
-        )
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ResponseTimeout(command)
-            try:
-                frame = self.bus.recv(remaining)
-            except CanBusError:
-                raise
-            except Exception as exc:
-                raise CanBusError(f"failed to receive CAN frame: {exc}") from exc
-            if frame is None:
-                raise ResponseTimeout(command)
-
+    def recv(self, timeout: float) -> CanFrame | None:
+        try:
+            frame = self.bus.recv(timeout)
+        except CanBusError:
+            raise
+        except Exception as exc:
+            raise CanBusError(f"failed to receive CAN frame: {exc}") from exc
+        if frame is not None:
             LOGGER.debug(
-                "RX %03X [%d] %s",
+                "RX %08X [%d] %s",
                 frame.arbitration_id,
                 frame.dlc,
                 frame.data.hex(" "),
             )
-            if frame.is_extended_id or frame.arbitration_id != expected_id:
+        return frame
+
+
+class NetworkScanner(_RawEndpoint):
+    """Lists every claiming J1939 NAME and optionally identifies CanLoader nodes."""
+
+    def __init__(
+        self,
+        bus: CanBus,
+        *,
+        timeout: float = 0.2,
+        identify_timeout: float | None = None,
+        source_address: int = DEFAULT_SOURCE_ADDRESS,
+        source_name: J1939Name | int = DEFAULT_SOURCE_NAME,
+        claim_timeout: float = 0.250,
+        session: int | None = None,
+    ) -> None:
+        super().__init__(bus)
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ConfigurationError("scan timeout must be greater than zero")
+        if identify_timeout is None:
+            identify_timeout = timeout
+        if not math.isfinite(identify_timeout) or identify_timeout <= 0:
+            raise ConfigurationError("identify timeout must be greater than zero")
+        if session is None:
+            session = secrets.randbelow(0xFF) + 1
+        if not 1 <= session <= 0xFF:
+            raise ConfigurationError("session must be between 1 and 255")
+        self.timeout = timeout
+        self.identify_timeout = identify_timeout
+        self._session = session
+        self.claim_manager = AddressClaimManager(
+            bus,
+            name=source_name,
+            preferred_address=source_address,
+            claim_timeout=claim_timeout,
+        )
+
+    def _next_session(self) -> int:
+        self._session = (self._session % 0xFF) + 1
+        return self._session
+
+    def _identify(self, address: int) -> int | None:
+        session = self._next_session()
+        frame = encode_control_request(
+            self.claim_manager.address,
+            address,
+            Command.IDENTIFY,
+            session,
+        )
+        self.send(frame)
+        deadline = time.monotonic() + self.identify_timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            response_frame = self.recv(remaining)
+            if response_frame is None:
+                return None
+            claim = self.claim_manager.process_claim(response_frame)
+            if claim is not None:
+                continue
+            try:
+                response = decode_response(response_frame)
+            except ProtocolError:
+                continue
+            if (
+                response.source_address == address
+                and response.destination_address == self.claim_manager.address
+                and response.version == PROTOCOL_VERSION
+                and response.kind is ResponseKind.ACK
+                and response.command == int(Command.IDENTIFY)
+                and response.session == session
+            ):
+                try:
+                    return _validate_identify_capabilities(response.value, address)
+                except ProtocolError:
+                    return None
+
+    def scan(self) -> list[DiscoveredDevice]:
+        book = self.claim_manager.request_claims(self.timeout)
+        own_name = self.claim_manager.name.value
+        claims = [
+            claim
+            for claim in book.all(include_cannot_claim=True)
+            if claim.name.value != own_name
+        ]
+        counts: dict[int, int] = {}
+        for claim in claims:
+            counts[claim.address] = counts.get(claim.address, 0) + 1
+
+        devices: list[DiscoveredDevice] = []
+        for claim in claims:
+            capabilities = None
+            if claim.address != NULL_ADDRESS and counts[claim.address] == 1:
+                capabilities = self._identify(claim.address)
+            devices.append(
+                DiscoveredDevice(
+                    address=claim.address,
+                    name=claim.name,
+                    capabilities=capabilities,
+                )
+            )
+        return devices
+
+
+class BootloaderClient(_RawEndpoint):
+    def __init__(
+        self,
+        bus: CanBus,
+        *,
+        address: int = DEFAULT_TARGET_ADDRESS,
+        target_name: J1939Name | int | None = None,
+        source_address: int = DEFAULT_SOURCE_ADDRESS,
+        source_name: J1939Name | int = DEFAULT_SOURCE_NAME,
+        timeout: float = 0.5,
+        erase_timeout: float = 4.0,
+        claim_timeout: float = 0.250,
+        scan_timeout: float = 0.2,
+        transport_timeout: float = 1.5,
+        retries: int = 3,
+        session: int | None = None,
+    ) -> None:
+        super().__init__(bus)
+        validate_unicast_address(address, "target address")
+        validate_unicast_address(source_address, "source address")
+        if address == source_address:
+            raise ConfigurationError("source and target addresses must differ")
+        for value, label in (
+            (timeout, "timeout"),
+            (erase_timeout, "erase timeout"),
+            (claim_timeout, "claim timeout"),
+            (scan_timeout, "scan timeout"),
+            (transport_timeout, "transport timeout"),
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ConfigurationError(f"{label} must be greater than zero")
+        if retries < 0:
+            raise ConfigurationError("retries cannot be negative")
+        if session is None:
+            session = secrets.randbelow(0xFF) + 1
+        if not 1 <= session <= 0xFF:
+            raise ConfigurationError("session must be between 1 and 255")
+
+        self.address = address
+        self.target_name = (
+            target_name
+            if isinstance(target_name, J1939Name)
+            else (J1939Name(target_name) if target_name is not None else None)
+        )
+        self.timeout = timeout
+        self.erase_timeout = erase_timeout
+        self.scan_timeout = scan_timeout
+        self.transport_timeout = transport_timeout
+        self.retries = retries
+        self.session = session
+        self._query_session = session
+        self._prepared = False
+        self._profile_validated = False
+        self._deferred_dm15: deque[CanFrame] = deque()
+        self.claim_manager = AddressClaimManager(
+            bus,
+            name=source_name,
+            preferred_address=source_address,
+            claim_timeout=claim_timeout,
+            fallback_addresses=tuple(
+                candidate
+                for candidate in AAC_FALLBACK_ADDRESSES
+                if candidate != address
+            ),
+        )
+        self.transport: J1939Transport | None = None
+
+    @property
+    def source_address(self) -> int:
+        return self.claim_manager.address
+
+    def _next_query_session(self) -> int:
+        self._query_session = (self._query_session % 0xFF) + 1
+        if self._query_session == self.session:
+            self._query_session = (self._query_session % 0xFF) + 1
+        return self._query_session
+
+    def _ensure_source(self) -> None:
+        old = self.claim_manager.address
+        claimed = self.claim_manager.claim()
+        transport_changed = (
+            self.transport is not None
+            and self.transport.source_address != claimed
+        )
+        if self.transport is None or transport_changed:
+            self.transport = J1939Transport(
+                self.bus,
+                source_address=claimed,
+                timeout=self.transport_timeout,
+                frame_observer=self._observe_transport_frame,
+            )
+        if old != claimed or transport_changed:
+            self._prepared = False
+            self._profile_validated = False
+
+    def _prepare_target(self, *, force: bool = False) -> J1939Name:
+        if self._prepared and not force:
+            assert self.target_name is not None
+            return self.target_name
+        if force:
+            self._profile_validated = False
+        self._ensure_source()
+        book = self.claim_manager.request_claims(self.scan_timeout)
+        if self.target_name is None:
+            claim = book.resolve_address(self.address)
+            self.target_name = claim.name
+        else:
+            claim = book.by_name(self.target_name)
+            if claim is None:
+                occupants = book.at_address(self.address)
+                if occupants:
+                    names = ", ".join(str(item.name) for item in occupants)
+                    raise TargetIdentityError(
+                        f"address 0x{self.address:02X} is claimed by {names}, "
+                        f"not expected NAME {self.target_name}"
+                    )
+                raise AddressClaimError(
+                    f"target NAME {self.target_name} did not claim an address"
+                )
+            if claim.address != self.address:
+                raise TargetIdentityError(
+                    f"target NAME {self.target_name} claimed 0x{claim.address:02X}, "
+                    f"not requested address 0x{self.address:02X}"
+                )
+            resolved = book.resolve_address(self.address)
+            if resolved.name != self.target_name:
+                raise TargetIdentityError(
+                    f"address 0x{self.address:02X} belongs to {resolved.name}, "
+                    f"not {self.target_name}"
+                )
+        self._prepared = True
+        return self.target_name
+
+    def _observe_frame(self, frame: CanFrame) -> None:
+        try:
+            claim = self.claim_manager.process_claim(frame)
+        except AddressClaimError:
+            self._prepared = False
+            self._profile_validated = False
+            raise
+        if claim is None or self.target_name is None:
+            return
+        if claim.name == self.target_name and claim.address != self.address:
+            self._prepared = False
+            self._profile_validated = False
+            raise TargetIdentityError(
+                f"locked target {self.target_name} moved from 0x{self.address:02X} "
+                f"to 0x{claim.address:02X} during an operation"
+            )
+        if claim.address == self.address and claim.name != self.target_name:
+            self._prepared = False
+            self._profile_validated = False
+            raise TargetIdentityError(
+                f"address 0x{self.address:02X} was claimed by unexpected NAME {claim.name}"
+            )
+
+    def _observe_transport_frame(self, frame: CanFrame) -> None:
+        """Preserve application responses encountered while TP waits for CM."""
+
+        self._observe_frame(frame)
+        try:
+            identifier = identifier_from_frame(frame)
+        except ProtocolError:
+            return
+        if (
+            identifier.pgn == PGN_DM15
+            and identifier.source_address == self.address
+            and identifier.destination_address == self.source_address
+        ):
+            self._deferred_dm15.append(frame)
+
+    def _wait_for_response(
+        self,
+        command: Command,
+        session: int,
+        timeout: float,
+        accept_value: ValuePredicate | None = None,
+    ) -> int:
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResponseTimeout(command)
+            frame = self.recv(remaining)
+            if frame is None:
+                raise ResponseTimeout(command)
+            try:
+                identifier = identifier_from_frame(frame)
+            except ProtocolError:
+                continue
+            self._observe_frame(frame)
+            if identifier.pgn == PGN_ADDRESS_CLAIMED:
                 continue
             try:
                 response = decode_response(frame)
             except ProtocolError:
                 continue
             if (
-                response.version != PROTOCOL_VERSION
-                or response.session != response_session
+                response.source_address != self.address
+                or response.destination_address != self.source_address
+                or response.version != PROTOCOL_VERSION
+                or response.session != session
             ):
                 continue
             if (
@@ -323,11 +516,6 @@ class BootloaderClient:
             if response.kind is ResponseKind.NACK:
                 raise NackError(command, response.value)
             if accept_value is not None and not accept_value(response.value):
-                LOGGER.debug(
-                    "ignoring stale %s ACK value %d",
-                    command.name,
-                    response.value,
-                )
                 continue
             return response.value
 
@@ -335,23 +523,20 @@ class BootloaderClient:
         self,
         frame: CanFrame,
         command: Command,
+        session: int,
         *,
         timeout: float | None = None,
         retries: int | None = None,
         accept_value: ValuePredicate | None = None,
-        expected_session: int | None = None,
     ) -> int:
         response_timeout = self.timeout if timeout is None else timeout
         retry_count = self.retries if retries is None else retries
         attempts = retry_count + 1
         for attempt in range(1, attempts + 1):
-            self._send(frame)
+            self.send(frame)
             try:
                 return self._wait_for_response(
-                    command,
-                    response_timeout,
-                    accept_value,
-                    expected_session=expected_session,
+                    command, session, response_timeout, accept_value
                 )
             except ResponseTimeout:
                 if attempt == attempts:
@@ -363,19 +548,34 @@ class BootloaderClient:
         self,
         command: Command,
         *,
+        parameter: int = 0,
         value: int = 0,
         timeout: float | None = None,
-        session: int | None = None,
+        retries: int | None = None,
+        query: bool = False,
+        prepare: bool = True,
+        accept_value: ValuePredicate | None = None,
     ) -> int:
-        request_session = self.session if session is None else session
+        if prepare:
+            self._prepare_target()
+        else:
+            self._ensure_source()
+        session = self._next_query_session() if query else self.session
         frame = encode_control_request(
-            self.node, command, request_session, value=value
+            self.source_address,
+            self.address,
+            command,
+            session,
+            parameter=parameter,
+            value=value,
         )
         return self._exchange(
             frame,
             command,
+            session,
             timeout=timeout,
-            expected_session=request_session,
+            retries=retries,
+            accept_value=accept_value,
         )
 
     @staticmethod
@@ -386,180 +586,477 @@ class BootloaderClient:
             )
         return actual
 
-    def discover(self) -> int:
-        return self._request(
-            Command.DISCOVER, session=self._next_query_session()
+    def _validate_identify(self, capabilities: int) -> int:
+        try:
+            return _validate_identify_capabilities(capabilities, self.address)
+        except ProtocolError:
+            self._profile_validated = False
+            raise
+
+    def identify(self) -> int:
+        self._profile_validated = False
+        capabilities = self._validate_identify(
+            self._request(Command.IDENTIFY, query=True)
         )
+        self._profile_validated = True
+        return capabilities
+
+    def _ensure_profile(self) -> None:
+        if not self._profile_validated:
+            self.identify()
 
     def info(self, selector: InfoSelector | int) -> int:
         try:
             selector_value = int(InfoSelector(selector))
         except ValueError as exc:
             raise ConfigurationError(f"unknown INFO selector {selector}") from exc
+        self._ensure_profile()
         return self._request(
             Command.INFO,
-            value=selector_value,
-            session=self._next_query_session(),
+            parameter=selector_value,
+            query=True,
         )
 
     def read_device_info(self) -> DeviceInfo:
+        self._prepare_target()
+        assert self.target_name is not None
+        capabilities = self._validate_identify(
+            self.info(InfoSelector.CAPABILITIES)
+        )
+        app_base = self.info(InfoSelector.APP_BASE)
+        app_max_size = self.info(InfoSelector.APP_MAX_SIZE)
+        stored_size = self.info(InfoSelector.STORED_SIZE)
+        stored_crc = self.info(InfoSelector.STORED_CRC)
+        uid_words = (
+            self.info(InfoSelector.UID_WORD_0),
+            self.info(InfoSelector.UID_WORD_1),
+            self.info(InfoSelector.UID_WORD_2),
+        )
+        reported_name = J1939Name(
+            self.info(InfoSelector.NAME_LOW)
+            | (self.info(InfoSelector.NAME_HIGH) << 32)
+        )
+        reported_address = self.info(InfoSelector.SOURCE_ADDRESS)
+        if reported_name != self.target_name or reported_address != self.address:
+            raise TargetIdentityError(
+                "INFO identity does not match the locked Address Claimed identity"
+            )
         return DeviceInfo(
-            capabilities=self.info(InfoSelector.CAPABILITIES),
-            app_base=self.info(InfoSelector.APP_BASE),
-            app_max_size=self.info(InfoSelector.APP_MAX_SIZE),
-            stored_size=self.info(InfoSelector.STORED_SIZE),
-            stored_crc=self.info(InfoSelector.STORED_CRC),
-            uid_words=(
-                self.info(InfoSelector.UID_WORD_0),
-                self.info(InfoSelector.UID_WORD_1),
-                self.info(InfoSelector.UID_WORD_2),
-            ),
+            address=self.address,
+            name=self.target_name,
+            capabilities=capabilities,
+            app_base=app_base,
+            app_max_size=app_max_size,
+            stored_size=stored_size,
+            stored_crc=stored_crc,
+            uid_words=uid_words,
         )
 
-    def set_node_id(self, node_id: int) -> int:
-        validate_node(node_id)
-        actual = self._request(Command.SET_NODE_ID, value=node_id)
-        return self._require_ack_value(Command.SET_NODE_ID, actual, node_id)
-
-    def enter_bootloader(self) -> int:
-        actual = self._request(Command.ENTER_BOOTLOADER)
-        return self._require_ack_value(Command.ENTER_BOOTLOADER, actual, 0)
-
     def start_update(self, size: int) -> int:
+        self._ensure_profile()
         actual = self._request(Command.START_UPDATE, value=size)
-        if not 1 <= actual <= MAX_BLOCK_SIZE:
+        if not 1 <= actual <= UPDATE_BLOCK_SIZE:
             raise ProtocolError(
                 f"START_UPDATE ACK returned invalid block size {actual}; "
-                f"expected 1..{MAX_BLOCK_SIZE}"
+                f"expected 1..{UPDATE_BLOCK_SIZE}"
             )
         return actual
 
     def set_image_crc(self, crc: int) -> int:
+        self._ensure_profile()
         actual = self._request(Command.SET_IMAGE_CRC, value=crc)
         return self._require_ack_value(Command.SET_IMAGE_CRC, actual, crc)
 
-    def erase(self, expected_size: int | None = None) -> int:
-        actual = self._request(Command.ERASE, timeout=self.erase_timeout)
-        if expected_size is not None:
-            self._require_ack_value(Command.ERASE, actual, expected_size)
-        return actual
-
-    def finish(self, expected_crc: int | None = None) -> int:
-        actual = self._request(Command.FINISH)
-        if expected_crc is not None:
-            self._require_ack_value(Command.FINISH, actual, expected_crc)
-        return actual
+    def finalize(self, expected_crc: int) -> int:
+        self._ensure_profile()
+        actual = self._request(Command.FINALIZE, value=expected_crc)
+        return self._require_ack_value(Command.FINALIZE, actual, expected_crc)
 
     def verify(self, expected_crc: int | None = None) -> int:
-        actual_crc = self._request(Command.VERIFY)
-        if expected_crc is not None and actual_crc != expected_crc:
+        self._ensure_profile()
+        actual = self._request(Command.VERIFY)
+        if expected_crc is not None and actual != expected_crc:
             raise VerificationError(
-                f"VERIFY returned 0x{actual_crc:08X}; expected 0x{expected_crc:08X}"
+                f"VERIFY returned 0x{actual:08X}; expected 0x{expected_crc:08X}"
             )
-        return actual_crc
+        return actual
 
     def run_application(self, expected_crc: int | None = None) -> int:
+        self._ensure_profile()
         actual = self._request(Command.RUN_APPLICATION)
         if expected_crc is not None:
             self._require_ack_value(Command.RUN_APPLICATION, actual, expected_crc)
         return actual
 
     def abort(self) -> int:
+        self._ensure_profile()
         actual = self._request(Command.ABORT)
         return self._require_ack_value(Command.ABORT, actual, 0)
 
     def _abort_best_effort(self) -> None:
         try:
-            self._send(
-                encode_control_request(self.node, Command.ABORT, self.session)
+            self._ensure_source()
+            frame = encode_control_request(
+                self.source_address,
+                self.address,
+                Command.ABORT,
+                self.session,
             )
+            self.send(frame)
         except Exception:
             LOGGER.debug("best-effort ABORT could not be sent", exc_info=True)
 
-    @staticmethod
-    def _is_retryable_block_nack(error: NackError) -> bool:
-        return error.command in (Command.BEGIN_BLOCK, Command.DATA) and error.code in (
-            NackCode.INVALID_SEQUENCE,
-            NackCode.TIMEOUT,
-        )
-
-    def _transfer_block(
-        self,
-        block_index: int,
-        block: bytes,
-        block_size: int,
-        total_size: int,
-        progress: ProgressCallback | None,
-    ) -> None:
-        block_start = block_index * block_size
-        block_end = block_start + len(block)
-        begin = encode_begin_block(
-            self.node, self.session, block_index, len(block)
-        )
-        attempts = self.retries + 1
-        last_error: Exception | None = None
-
-        for attempt in range(1, attempts + 1):
+    def _wait_dm15(self, timeout: float, *, terminal: bool = False) -> Dm15:
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResponseTimeout(PGN_DM15)
+            frame = (
+                self._deferred_dm15.popleft()
+                if self._deferred_dm15
+                else self.recv(remaining)
+            )
+            if frame is None:
+                raise ResponseTimeout(PGN_DM15)
             try:
-                committed = self._exchange(
-                    begin,
-                    Command.BEGIN_BLOCK,
-                    retries=0,
-                    accept_value=lambda value: value in (block_start, block_end),
-                )
-                if committed == block_end:
-                    if progress is not None:
-                        progress(committed, total_size)
-                    return
-                if committed != block_start:
-                    raise ProtocolError(
-                        f"device reported partial block commit {committed}; "
-                        f"expected exactly {block_start} or {block_end}"
-                    )
+                identifier = identifier_from_frame(frame)
+            except ProtocolError:
+                continue
+            self._observe_frame(frame)
+            if identifier.pgn == PGN_ADDRESS_CLAIMED:
+                continue
+            if identifier.pgn != PGN_DM15:
+                continue
+            try:
+                response = decode_dm15(frame)
+            except ProtocolError:
+                continue
+            if (
+                response.source_address != self.address
+                or response.destination_address != self.source_address
+            ):
+                continue
+            if response.status is Dm15Status.BUSY or (
+                terminal and response.status is Dm15Status.PROCEED
+            ):
+                continue
+            return response
 
-                block_sequence = block_index & 0xFF
-                for frame_sequence, offset in enumerate(
-                    range(0, len(block), MAX_DATA_PAYLOAD)
-                ):
-                    self._send(
-                        encode_data_frame(
-                            self.node,
-                            self.session,
-                            block_sequence,
-                            frame_sequence,
-                            block[offset : offset + MAX_DATA_PAYLOAD],
-                        )
-                    )
-                committed = self._wait_for_response(
-                    Command.DATA,
-                    self.timeout,
-                    accept_value=lambda value: value == block_end,
+    def _send_dm14(
+        self,
+        command: Dm14Command,
+        *,
+        length: int,
+        pointer: int,
+    ) -> None:
+        self.send(
+            encode_dm14(
+                self.source_address,
+                self.address,
+                command,
+                length=length,
+                pointer=pointer,
+                key=0xFFFF,
+            )
+        )
+
+    def _close_dm14(self, *, length: int, pointer: int) -> None:
+        # The close has no positive response. Reuse the configured retry budget
+        # proactively; the target treats exact duplicates as idempotent/silent.
+        for _ in range(self.retries + 1):
+            self._send_dm14(
+                Dm14Command.OPERATION_COMPLETED,
+                length=length,
+                pointer=pointer,
+            )
+
+    @staticmethod
+    def _require_dm15_status(
+        response: Dm15, expected: Dm15Status, operation: str
+    ) -> None:
+        if response.status is Dm15Status.OPERATION_FAILED:
+            raise BlockTransferError(
+                f"{operation} failed in DM15 (error 0x{response.error_code:08X})"
+            )
+        if response.status is not expected:
+            raise ProtocolError(
+                f"{operation} returned DM15 {response.status.name}; "
+                f"expected {expected.name}"
+            )
+
+    @staticmethod
+    def _require_dm15_length(response: Dm15, expected: int, operation: str) -> None:
+        if response.allowed_length != expected:
+            raise ProtocolError(
+                f"{operation} returned DM15 length {response.allowed_length}; "
+                f"expected exactly {expected}"
+            )
+
+    def erase(self, app_base: int, image_size: int) -> int:
+        if image_size <= 0:
+            raise ConfigurationError("erase image size must be greater than zero")
+        self._ensure_profile()
+        page_count = math.ceil(image_size / FLASH_ERASE_BLOCK_SIZE)
+        self._prepare_target()
+        last_error: ResponseTimeout | None = None
+        for attempt in range(1, self.retries + 2):
+            self._send_dm14(
+                Dm14Command.ERASE,
+                length=page_count,
+                pointer=app_base,
+            )
+            try:
+                response = self._wait_dm15(self.erase_timeout)
+                self._require_dm15_length(response, page_count, "erase")
+                if response.status is Dm15Status.PROCEED:
+                    response = self._wait_dm15(self.erase_timeout, terminal=True)
+                    self._require_dm15_length(response, page_count, "erase")
+                self._require_dm15_status(
+                    response, Dm15Status.OPERATION_COMPLETED, "erase"
                 )
-                if committed != block_end:
-                    raise ProtocolError(
-                        f"DATA ACK reported {committed} committed bytes; "
-                        f"expected {block_end}"
-                    )
-                if progress is not None:
-                    progress(committed, total_size)
-                return
+                self._close_dm14(length=page_count, pointer=app_base)
+                return page_count
             except ResponseTimeout as exc:
                 last_error = exc
-            except NackError as exc:
-                if not self._is_retryable_block_nack(exc):
-                    raise
-                last_error = exc
-
-            if attempt < attempts:
+                if attempt > self.retries:
+                    break
                 LOGGER.debug(
-                    "retrying block %d (%d/%d)", block_index, attempt, attempts
+                    "retrying DM14 erase (%d/%d)", attempt, self.retries + 1
+                )
+        raise BlockTransferError(
+            f"erase was not confirmed after {self.retries + 1} attempts: "
+            f"{last_error}"
+        ) from last_error
+
+    def _write_block_once(self, pointer: int, block: bytes) -> None:
+        self._send_dm14(Dm14Command.WRITE, length=len(block), pointer=pointer)
+        proceed = self._wait_dm15(self.timeout)
+        self._require_dm15_length(proceed, len(block), "write")
+        if proceed.status is Dm15Status.OPERATION_COMPLETED:
+            self._close_dm14(length=len(block), pointer=pointer)
+            return
+        self._require_dm15_status(proceed, Dm15Status.PROCEED, "write")
+        if proceed.seed not in (0, 0xFFFF):
+            raise BlockTransferError(
+                "device requested DM14 security, unsupported by this profile"
+            )
+        assert self.transport is not None
+        transport_error: TransportError | None = None
+        if len(block) <= 7:
+            self.send(encode_dm16(self.source_address, self.address, block))
+        else:
+            try:
+                self.transport.send_rts_cts(
+                    PGN_DM16,
+                    self.address,
+                    encode_dm16_transport_payload(block),
+                )
+            except TransportError as exc:
+                transport_error = exc
+
+        completed = self._wait_dm15(self.timeout, terminal=True)
+        self._require_dm15_length(completed, len(block), "write")
+        if transport_error is not None:
+            if completed.status is Dm15Status.OPERATION_COMPLETED:
+                self._close_dm14(length=len(block), pointer=pointer)
+                return
+            if (
+                completed.status is Dm15Status.OPERATION_FAILED
+                and completed.error_code
+                not in (int(NackCode.INVALID_SEQUENCE), int(NackCode.TIMEOUT))
+            ):
+                self._require_dm15_status(
+                    completed, Dm15Status.OPERATION_COMPLETED, "write"
+                )
+            raise transport_error
+        self._require_dm15_status(
+            completed, Dm15Status.OPERATION_COMPLETED, "write"
+        )
+        self._close_dm14(length=len(block), pointer=pointer)
+
+    def write_block(self, pointer: int, block: bytes | bytearray | memoryview) -> None:
+        payload = bytes(block)
+        if not 1 <= len(payload) <= UPDATE_BLOCK_SIZE:
+            raise ConfigurationError(
+                f"update block must contain 1..{UPDATE_BLOCK_SIZE} bytes"
+            )
+        self._ensure_profile()
+        self._prepare_target()
+        last_error: BaseException | None = None
+        for attempt in range(1, self.retries + 2):
+            try:
+                self._write_block_once(pointer, payload)
+                return
+            except (ResponseTimeout, TransportError) as exc:
+                last_error = exc
+                if attempt > self.retries:
+                    break
+                LOGGER.debug(
+                    "retrying DM14/DM16 block at 0x%08X (%d/%d)",
+                    pointer,
+                    attempt,
+                    self.retries + 1,
+                )
+        raise BlockTransferError(
+            f"block at 0x{pointer:08X} was not committed after "
+            f"{self.retries + 1} attempts: {last_error}"
+        ) from last_error
+
+    def _wait_for_reclaim(self, timeout: float) -> None:
+        assert self.target_name is not None
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResponseTimeout("Address Claimed after reset")
+            iteration_started = time.monotonic()
+            book = self.claim_manager.request_claims(min(self.scan_timeout, remaining))
+            claim = book.by_name(self.target_name)
+            if claim is None or claim.observed_at < iteration_started:
+                continue
+            if claim.address != self.address:
+                raise TargetIdentityError(
+                    f"target rebooted at 0x{claim.address:02X}, expected "
+                    f"0x{self.address:02X}"
                 )
 
-        detail = f": {last_error}" if last_error is not None else ""
-        raise BlockTransferError(
-            f"block {block_index} was not committed after {attempts} attempts"
-            f"{detail}"
-        ) from last_error
+            # A claim observed just after ENTER may still have been emitted by
+            # the application before its delayed reset. Only accept the
+            # transition once a directed IDENTIFY reports bootloader mode.
+            self._prepared = True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._prepared = False
+                raise ResponseTimeout("bootloader IDENTIFY after reset")
+            try:
+                capabilities = self._validate_identify(
+                    self._request(
+                        Command.IDENTIFY,
+                        query=True,
+                        prepare=False,
+                        timeout=min(self.timeout, remaining),
+                        retries=0,
+                    )
+                )
+            except (ResponseTimeout, NackError):
+                self._prepared = False
+                self._profile_validated = False
+                continue
+            if not capabilities & CAPABILITY_APPLICATION_RUNNING:
+                self._profile_validated = True
+                return
+            self._prepared = False
+            self._profile_validated = False
+
+    def enter_bootloader(self, *, wait: bool = True) -> int:
+        self._ensure_profile()
+        actual = self._request(Command.ENTER_BOOTLOADER)
+        self._require_ack_value(Command.ENTER_BOOTLOADER, actual, 0)
+        if wait:
+            self._prepared = False
+            self._profile_validated = False
+            self._wait_for_reclaim(self.erase_timeout)
+        return actual
+
+    def set_address(self, new_address: int) -> int:
+        validate_unicast_address(new_address, "new address")
+        self._ensure_profile()
+        if new_address == self.source_address:
+            raise ConfigurationError(
+                "new target address cannot equal the service-tool source address"
+            )
+        # Commanded Address is global and has no application-level ACK. The
+        # profile validation above must complete before broadcasting it.
+        assert self.target_name is not None and self.transport is not None
+        old_address = self.address
+        payload = encode_commanded_address_payload(self.target_name, new_address)
+        last_identity_error: TargetIdentityError | None = None
+        for attempt in range(1, self.retries + 2):
+            started = time.monotonic()
+            stable_since: float | None = None
+            self.transport.send_bam(PGN_COMMANDED_ADDRESS, payload)
+            retry_not_before = time.monotonic() + self.transport_timeout
+            deadline = max(
+                time.monotonic() + self.erase_timeout,
+                retry_not_before,
+            )
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                book = self.claim_manager.request_claims(
+                    min(self.scan_timeout, remaining)
+                )
+                claim = book.by_name(self.target_name)
+                if claim is None or claim.observed_at < started:
+                    continue
+                if claim.address != new_address:
+                    last_identity_error = TargetIdentityError(
+                        f"target {self.target_name} did not retain commanded "
+                        f"address 0x{new_address:02X}; it claimed "
+                        f"0x{claim.address:02X}"
+                    )
+                    # The preceding BAM may still be incomplete in the target.
+                    # Do not overlap a retry with its TP timeout window.
+                    if time.monotonic() >= retry_not_before:
+                        break
+                    continue
+                if stable_since is None:
+                    stable_since = claim.observed_at
+                if (
+                    time.monotonic() - stable_since
+                    < self.claim_manager.claim_timeout
+                ):
+                    continue
+                occupants = book.at_address(new_address)
+                if len(occupants) != 1 or occupants[0].name != self.target_name:
+                    continue
+
+                # A claim starts, rather than completes, address arbitration.
+                # Accept only after a quiet window, a unique NAME mapping and
+                # a directed CanLoader IDENTIFY at the new route.
+                self.address = new_address
+                self._profile_validated = False
+                try:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ResponseTimeout("Commanded Address IDENTIFY")
+                    capabilities = self._request(
+                        Command.IDENTIFY,
+                        query=True,
+                        prepare=False,
+                        timeout=min(self.timeout, remaining),
+                        retries=0,
+                    )
+                    self._validate_identify(capabilities)
+                except ResponseTimeout:
+                    self.address = old_address
+                    self._prepared = False
+                    self._profile_validated = False
+                    continue
+                except BaseException:
+                    self.address = old_address
+                    self._prepared = False
+                    self._profile_validated = False
+                    raise
+                self._prepared = True
+                self._profile_validated = True
+                return new_address
+
+            self.address = old_address
+            self._prepared = False
+            self._profile_validated = False
+            if attempt <= self.retries:
+                LOGGER.debug(
+                    "retrying Commanded Address BAM (%d/%d)",
+                    attempt,
+                    self.retries + 1,
+                )
+
+        if last_identity_error is not None:
+            raise last_identity_error
+        raise ResponseTimeout("Commanded Address claim", self.retries + 1)
 
     def update(
         self,
@@ -575,7 +1072,14 @@ class BootloaderClient:
                 "(initial stack pointer and reset vector)"
             )
 
-        self.discover()
+        capabilities = self.identify()
+        if capabilities & CAPABILITY_APPLICATION_RUNNING:
+            self.enter_bootloader(wait=True)
+            capabilities = self.identify()
+        if capabilities & CAPABILITY_APPLICATION_RUNNING:
+            raise ProtocolError("target still reports application mode after reset")
+
+        app_base = self.info(InfoSelector.APP_BASE)
         app_max_size = self.info(InfoSelector.APP_MAX_SIZE)
         if app_max_size < MIN_IMAGE_SIZE:
             raise ProtocolError(
@@ -592,33 +1096,28 @@ class BootloaderClient:
         try:
             block_size = self.start_update(len(firmware))
             self.set_image_crc(image_crc)
-            self.erase(len(firmware))
+            self.erase(app_base, len(firmware))
             if progress is not None:
                 progress(0, len(firmware))
-            for block_index, offset in enumerate(
-                range(0, len(firmware), block_size)
-            ):
-                self._transfer_block(
-                    block_index,
-                    firmware[offset : offset + block_size],
-                    block_size,
-                    len(firmware),
-                    progress,
-                )
-            self.finish(image_crc)
+            for offset in range(0, len(firmware), block_size):
+                block = firmware[offset : offset + block_size]
+                self.write_block(app_base + offset, block)
+                if progress is not None:
+                    progress(offset + len(block), len(firmware))
+            self.finalize(image_crc)
             verified_crc = self.verify(image_crc)
             verified = True
             if run:
                 self.run_application(image_crc)
+            assert self.target_name is not None
             return UpdateResult(
                 size=len(firmware),
                 crc=image_crc,
                 verified_crc=verified_crc,
                 ran_application=run,
+                target_name=self.target_name,
             )
         except BaseException:
             if not verified:
                 self._abort_best_effort()
             raise
-    ProbeSelector,
-    node_from_response_id,

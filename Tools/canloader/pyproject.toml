@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "canloader"
-version = "0.1.0"
-description = "Host updater for the CanLoader STM32 CAN bootloader"
+version = "0.2.0"
+description = "J1939 host updater for the CanLoader STM32 CAN bootloader"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "python-can>=4.3",
+    "python-can>=4.3,!=4.6.0",
     "pyserial>=3.5",
 ]
 

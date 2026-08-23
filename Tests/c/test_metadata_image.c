@@ -287,7 +287,7 @@ static void test_metadata_header_little_endian_and_crc(void)
     static const uint8_t expected_crc_input[TEST_METADATA_CRC_INPUT_SIZE] = {
         0x43U, 0x4CU, 0x4DU, 0x44U,
         0x01U, 0x00U,
-        0x01U, 0x00U,
+        BOOT_PROTOCOL_VERSION, 0x00U,
         0x34U, 0x12U, 0x00U, 0x00U,
         0xEFU, 0xCDU, 0xABU, 0x89U,
         0x00U, 0x00U, 0x00U, 0x00U
@@ -342,36 +342,6 @@ static void test_metadata_header_little_endian_and_crc(void)
         assert(!boot_metadata_read(&(boot_metadata_t){0}));
         metadata_flash[index] ^= UINT8_C(1);
     }
-}
-
-static void test_device_config_persists_node_and_rejects_corruption(void)
-{
-    uint8_t node_id = 0U;
-
-    fake_flash_reset();
-    assert(!boot_device_config_read(&node_id));
-    assert(boot_device_config_load_node() == BOOT_DEFAULT_NODE_ID);
-
-    assert(boot_device_config_store_node(37U) == BOOT_FLASH_STATUS_OK);
-    assert(fake_flash.erase_calls == 1U);
-    assert(fake_flash.erases[0].region == BOOT_FLASH_REGION_DEVICE_CONFIG);
-    assert(fake_flash.erases[0].length == BOOT_DEVICE_CONFIG_PAGE_SIZE);
-    assert(fake_flash.write_calls == 1U);
-    assert(fake_flash.writes[0].region == BOOT_FLASH_REGION_DEVICE_CONFIG);
-    assert(fake_flash.writes[0].length == BOOT_DEVICE_CONFIG_SERIALIZED_SIZE);
-    assert(boot_device_config_read(&node_id));
-    assert(node_id == 37U);
-    assert(boot_device_config_load_node() == 37U);
-
-    device_config_flash[BOOT_DEVICE_CONFIG_CRC_OFFSET] ^= UINT8_C(1);
-    assert(!boot_device_config_read(&node_id));
-    assert(boot_device_config_load_node() == BOOT_DEFAULT_NODE_ID);
-
-    fake_flash_reset();
-    assert(boot_device_config_store_node(0U) == BOOT_FLASH_STATUS_RANGE);
-    assert(boot_device_config_store_node(128U) == BOOT_FLASH_STATUS_RANGE);
-    assert(fake_flash.erase_calls == 0U);
-    assert(fake_flash.write_calls == 0U);
 }
 
 static void test_metadata_marker_transitions_and_precedence(void)
@@ -638,7 +608,6 @@ static void test_candidate_and_persisted_image_validation(void)
 
 int main(void)
 {
-    test_device_config_persists_node_and_rejects_corruption();
     test_metadata_header_little_endian_and_crc();
     test_metadata_marker_transitions_and_precedence();
     test_metadata_rejects_torn_and_unknown_markers();

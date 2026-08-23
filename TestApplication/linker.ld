@@ -5,7 +5,7 @@ _Min_Stack_Size = 0x400;
 
 MEMORY
 {
-  FLASH (rx)  : ORIGIN = 0x08004000, LENGTH = 0xBC00
+  FLASH (rx)  : ORIGIN = 0x08005000, LENGTH = 0xAC00
   RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 20K
 }
 
@@ -126,8 +126,8 @@ SECTIONS
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
 
-ASSERT(ADDR(.isr_vector) == 0x08004000,
-       "application vector table is not at 0x08004000")
+ASSERT(ADDR(.isr_vector) == 0x08005000,
+       "application vector table is not at 0x08005000")
 ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) == 0x0800FC00,
        "application FLASH region overlaps the metadata page")
 ASSERT(_stack_reservation_end <= ORIGIN(RAM) + LENGTH(RAM),

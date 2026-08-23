@@ -32,13 +32,25 @@ LDLIBS := -lgcc
 C_SOURCES := \
 	Src/main.c \
 	Src/system_stm32f1xx.c \
-	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c
+	$(PROJECT_ROOT)/Application/Src/boot_device_config.c \
+	$(PROJECT_ROOT)/Application/Src/boot_metadata.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_j1939.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_j1939_address_claim.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_j1939_tp.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_protocol.c
 ASM_SOURCE := $(PROJECT_ROOT)/Core/Startup/startup_stm32f103c8tx.s
 
 OBJECTS := \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/system_stm32f1xx.o \
+	$(BUILD_DIR)/boot_device_config.o \
+	$(BUILD_DIR)/boot_metadata.o \
 	$(BUILD_DIR)/boot_crc32.o \
+	$(BUILD_DIR)/boot_j1939.o \
+	$(BUILD_DIR)/boot_j1939_address_claim.o \
+	$(BUILD_DIR)/boot_j1939_tp.o \
+	$(BUILD_DIR)/boot_protocol.o \
 	$(BUILD_DIR)/startup_stm32f103c8tx.o
 DEPS := $(OBJECTS:.o=.d)
 
@@ -67,6 +79,24 @@ $(BUILD_DIR)/system_stm32f1xx.o: Src/system_stm32f1xx.c Makefile | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/boot_crc32.o: $(PROJECT_ROOT)/Protocol/Src/boot_crc32.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_device_config.o: $(PROJECT_ROOT)/Application/Src/boot_device_config.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_metadata.o: $(PROJECT_ROOT)/Application/Src/boot_metadata.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_j1939.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_j1939_address_claim.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939_address_claim.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_j1939_tp.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939_tp.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_protocol.o: $(PROJECT_ROOT)/Protocol/Src/boot_protocol.c Makefile | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/startup_stm32f103c8tx.o: $(ASM_SOURCE) Makefile | $(BUILD_DIR)

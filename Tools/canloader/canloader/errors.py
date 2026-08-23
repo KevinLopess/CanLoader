@@ -1,6 +1,8 @@
 """Exceptions raised by the CanLoader host tool."""
 
-from .constants import Command, NACK_DESCRIPTIONS, NackCode
+from typing import Any
+
+from .constants import NACK_DESCRIPTIONS, NackCode
 
 
 class CanLoaderError(Exception):
@@ -16,14 +18,28 @@ class CanBusError(CanLoaderError):
 
 
 class ProtocolError(CanLoaderError):
-    """A frame or response violates the CanLoader protocol."""
+    """A frame or response violates the selected protocol profile."""
+
+
+class AddressClaimError(CanLoaderError):
+    """A J1939 source address could not be claimed safely."""
+
+
+class AddressConflictError(AddressClaimError):
+    """More than one NAME currently claims an address."""
+
+
+class TargetIdentityError(CanLoaderError):
+    """The target address no longer belongs to the locked J1939 NAME."""
 
 
 class ResponseTimeout(CanLoaderError):
-    def __init__(self, command: Command | int, attempts: int = 1) -> None:
+    def __init__(self, command: Any, attempts: int = 1) -> None:
         self.command = command
         self.attempts = attempts
-        name = command.name if isinstance(command, Command) else f"0x{command:02X}"
+        name = getattr(command, "name", None) or (
+            f"0x{command:02X}" if isinstance(command, int) else str(command)
+        )
         suffix = "attempt" if attempts == 1 else "attempts"
         super().__init__(
             f"timed out waiting for {name} response after {attempts} {suffix}"
@@ -31,7 +47,7 @@ class ResponseTimeout(CanLoaderError):
 
 
 class NackError(CanLoaderError):
-    def __init__(self, command: Command | int, value: int) -> None:
+    def __init__(self, command: Any, value: int) -> None:
         self.command = command
         self.value = value
         try:
@@ -39,8 +55,8 @@ class NackError(CanLoaderError):
         except ValueError:
             self.code = None
 
-        command_name = (
-            command.name if isinstance(command, Command) else f"0x{command:02X}"
+        command_name = getattr(command, "name", None) or (
+            f"0x{int(command):02X}" if isinstance(command, int) else str(command)
         )
         if self.code is None:
             detail = f"unknown device error (code {value})"
@@ -50,13 +66,11 @@ class NackError(CanLoaderError):
 
 
 class DeviceSessionTimeout(NackError):
-    def __init__(self, waiting_for: Command) -> None:
-        super().__init__(Command.ABORT, NackCode.TIMEOUT)
+    def __init__(self, waiting_for: Any) -> None:
+        super().__init__(0x3F, NackCode.TIMEOUT)
         self.waiting_for = waiting_for
-        self.args = (
-            f"device session timed out while waiting for {waiting_for.name} "
-            f"(asynchronous ABORT NACK, code {NackCode.TIMEOUT.value})",
-        )
+        name = getattr(waiting_for, "name", str(waiting_for))
+        self.args = (f"device session timed out while waiting for {name}",)
 
 
 class VerificationError(CanLoaderError):
@@ -65,3 +79,16 @@ class VerificationError(CanLoaderError):
 
 class BlockTransferError(CanLoaderError):
     """A block could not be committed after all retry attempts."""
+
+
+class TransportError(CanLoaderError):
+    """A J1939 transport-protocol connection failed."""
+
+
+class TransportAbortError(TransportError):
+    def __init__(self, reason: int, pgn: int) -> None:
+        self.reason = reason
+        self.pgn = pgn
+        super().__init__(
+            f"peer aborted transport for PGN 0x{pgn:05X} (reason {reason})"
+        )

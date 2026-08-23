@@ -5,10 +5,18 @@
 #include <stdint.h>
 
 #define BOOT_CAN_MAX_DATA_LENGTH 8U
+#define BOOT_CAN_EXTENDED_ID_MAX UINT32_C(0x1FFFFFFF)
+
+typedef enum
+{
+    BOOT_CAN_ID_STANDARD = 0,
+    BOOT_CAN_ID_EXTENDED
+} boot_can_id_type_t;
 
 typedef struct
 {
     uint32_t id;
+    boot_can_id_type_t id_type;
     uint8_t dlc;
     uint8_t data[BOOT_CAN_MAX_DATA_LENGTH];
 } boot_can_frame_t;
@@ -22,7 +30,9 @@ typedef enum
     BOOT_CAN_STATUS_ERROR
 } boot_can_status_t;
 
-bool boot_can_init(uint8_t node_id);
+bool boot_can_init(uint8_t local_address);
+bool boot_can_configure_address(uint8_t local_address);
+bool boot_can_abort_pending_tx(void);
 bool boot_can_start(void);
 void boot_can_stop(void);
 boot_can_status_t boot_can_send(const boot_can_frame_t *frame);

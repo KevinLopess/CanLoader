@@ -6,8 +6,8 @@
 /* Target memory map: STM32F103C8, 64 KiB Flash and 20 KiB SRAM. */
 #define BOOT_FLASH_BASE_ADDRESS       UINT32_C(0x08000000)
 #define BOOT_FLASH_TOTAL_SIZE         UINT32_C(0x00010000)
-#define BOOTLOADER_FLASH_SIZE         UINT32_C(0x00004000)
-#define BOOTLOADER_CODE_SIZE          UINT32_C(0x00003C00)
+#define BOOTLOADER_FLASH_SIZE         UINT32_C(0x00005000)
+#define BOOTLOADER_CODE_SIZE          UINT32_C(0x00004C00)
 #define BOOT_DEVICE_CONFIG_PAGE_SIZE  UINT32_C(0x00000400)
 #define BOOT_DEVICE_CONFIG_ADDRESS    (BOOT_FLASH_BASE_ADDRESS + BOOTLOADER_CODE_SIZE)
 #define BOOT_APPLICATION_ADDRESS      (BOOT_FLASH_BASE_ADDRESS + BOOTLOADER_FLASH_SIZE)
@@ -22,28 +22,43 @@
 #define BOOT_FLASH_PAGE_SIZE          UINT32_C(1024)
 #define BOOT_FLASH_PROGRAM_UNIT       UINT32_C(2)
 
-/* Standard 11-bit CAN identifiers. A node occupies one request/response set. */
-#define BOOT_DEFAULT_NODE_ID          UINT8_C(1)
-#define BOOT_MIN_NODE_ID              UINT8_C(1)
-#define BOOT_MAX_NODE_ID              UINT8_C(0x7F)
-#define BOOT_CAN_RESPONSE_BASE_ID     UINT32_C(0x580)
-#define BOOT_CAN_COMMAND_BASE_ID      UINT32_C(0x600)
-#define BOOT_CAN_DATA_BASE_ID         UINT32_C(0x700)
-#define BOOT_CAN_BROADCAST_ID         UINT32_C(0x500)
-#define BOOT_CAN_RESPONSE_ID(node)    (BOOT_CAN_RESPONSE_BASE_ID + (uint32_t)(node))
-#define BOOT_CAN_COMMAND_ID(node)     (BOOT_CAN_COMMAND_BASE_ID + (uint32_t)(node))
-#define BOOT_CAN_DATA_ID(node)        (BOOT_CAN_DATA_BASE_ID + (uint32_t)(node))
-
-#define BOOT_PROTOCOL_VERSION         UINT8_C(1)
+/* SAE J1939 profile. All application frames use 29-bit CAN identifiers. */
+#define BOOT_PROTOCOL_VERSION                    UINT8_C(2)
 #define BOOT_TARGET_CODE              UINT8_C(0xF1)
 
+#define BOOT_J1939_PRIORITY                       UINT8_C(6)
+#define BOOT_J1939_GLOBAL_ADDRESS                 UINT8_C(0xFF)
+#define BOOT_J1939_NULL_ADDRESS                   UINT8_C(0xFE)
+#define BOOT_J1939_DEFAULT_PREFERRED_ADDRESS      UINT8_C(0x80)
+#define BOOT_J1939_ARBITRARY_ADDRESS_MIN          UINT8_C(0x80)
+#define BOOT_J1939_ARBITRARY_ADDRESS_MAX          UINT8_C(0xF7)
+
+/*
+ * Development NAME fields. A production device must use an SAE-assigned
+ * manufacturer code and a manufacturer-controlled unique identity number.
+ * The development identity number is derived deterministically from the
+ * STM32 96-bit UID and truncated to the 21 bits available in NAME.
+ */
+#define BOOT_J1939_NAME_MANUFACTURER_CODE         UINT16_C(0)
+#define BOOT_J1939_NAME_ECU_INSTANCE              UINT8_C(0)
+#define BOOT_J1939_NAME_FUNCTION_INSTANCE         UINT8_C(0)
+#define BOOT_J1939_NAME_FUNCTION                  UINT8_C(0)
+#define BOOT_J1939_NAME_VEHICLE_SYSTEM            UINT8_C(0)
+#define BOOT_J1939_NAME_VEHICLE_SYSTEM_INSTANCE   UINT8_C(0)
+#define BOOT_J1939_NAME_INDUSTRY_GROUP            UINT8_C(0)
+#define BOOT_J1939_NAME_ARBITRARY_ADDRESS_CAPABLE 1U
+
 #define BOOT_TRANSFER_BLOCK_SIZE      UINT32_C(100)
-#define BOOT_DATA_BYTES_PER_FRAME     UINT32_C(5)
 #define BOOT_RX_BUDGET_PER_TASK       UINT32_C(8)
+#define BOOT_TX_QUEUE_CAPACITY        UINT32_C(8)
+#define BOOT_J1939_TP_CTS_WINDOW      UINT8_C(8)
 
 #define BOOT_WINDOW_MS                UINT32_C(1500)
 #define BOOT_REQUEST_WINDOW_MS        UINT32_C(10000)
 #define BOOT_TRANSFER_TIMEOUT_MS      UINT32_C(5000)
+#define BOOT_J1939_ADDRESS_CLAIM_MS   UINT32_C(250)
+#define BOOT_J1939_CANNOT_CLAIM_MAX_MS UINT32_C(153)
+#define BOOT_J1939_TP_TIMEOUT_MS      UINT32_C(1250)
 #define BOOT_RUN_RESPONSE_DELAY_MS    UINT32_C(50)
 #define BOOT_RUN_RESPONSE_TIMEOUT_MS  UINT32_C(250)
 #define BOOT_LED_FAST_MS              UINT32_C(125)
@@ -54,15 +69,18 @@
 #define BOOT_METADATA_MAGIC           UINT32_C(0x444D4C43) /* "CLMD" in little endian. */
 #define BOOT_METADATA_FORMAT_VERSION  UINT16_C(1)
 
-#if (BOOT_DEFAULT_NODE_ID < BOOT_MIN_NODE_ID) || \
-    (BOOT_DEFAULT_NODE_ID > BOOT_MAX_NODE_ID)
-#error "BOOT_DEFAULT_NODE_ID must be in the range 1..127"
+#if (BOOT_J1939_DEFAULT_PREFERRED_ADDRESS >= BOOT_J1939_NULL_ADDRESS)
+#error "The preferred J1939 source address must be in the range 0..253"
 #endif
 
-#if (BOOT_CAN_DATA_BASE_ID + BOOT_MAX_NODE_ID > 0x7FFU) || \
-    (BOOT_CAN_COMMAND_BASE_ID + BOOT_MAX_NODE_ID > 0x7FFU) || \
-    (BOOT_CAN_RESPONSE_BASE_ID + BOOT_MAX_NODE_ID > 0x7FFU)
-#error "CanLoader identifiers must fit an 11-bit CAN identifier"
+#if (BOOT_J1939_NAME_MANUFACTURER_CODE > 0x7FFU) || \
+    (BOOT_J1939_NAME_ECU_INSTANCE > 0x07U) || \
+    (BOOT_J1939_NAME_FUNCTION_INSTANCE > 0x1FU) || \
+    (BOOT_J1939_NAME_VEHICLE_SYSTEM > 0x7FU) || \
+    (BOOT_J1939_NAME_VEHICLE_SYSTEM_INSTANCE > 0x0FU) || \
+    (BOOT_J1939_NAME_INDUSTRY_GROUP > 0x07U) || \
+    (BOOT_J1939_NAME_ARBITRARY_ADDRESS_CAPABLE > 1U)
+#error "One or more J1939 NAME fields are outside their encoded width"
 #endif
 
 #if (BOOTLOADER_CODE_SIZE + BOOT_DEVICE_CONFIG_PAGE_SIZE != BOOTLOADER_FLASH_SIZE)

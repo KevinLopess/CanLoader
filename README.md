@@ -1,89 +1,79 @@
-# CanLoader
+# CanLoader v2
 
-CanLoader é um bootloader para atualização de firmware por CAN no
-STM32F103C8Tx. A implementação usa CAN clássico a 500 kbit/s, identificadores
-padrão de 11 bits, transferência em blocos, ACK/NACK, sessão, timeout,
-retransmissão no host e CRC-32/ISO-HDLC. A lógica comum é separada dos ports de
-CAN, Flash e plataforma específicos do STM32F1.
+CanLoader é um bootloader *single-slot* para atualização de firmware do
+STM32F103C8Tx por CAN clássico a 500 kbit/s. A versão atual fala somente o
+perfil CanLoader v2: identificadores estendidos de 29 bits, NAME e Address
+Claiming J1939, TP RTS/CTS/BAM, um subconjunto de DM14/DM15/DM16 para acesso à
+memória e um PGN Proprietary A para o ciclo de vida da imagem.
 
-O target atual é o STM32F103C8Tx com 64 KiB de Flash e 20 KiB de SRAM. A
-aplicação começa em `0x08004000`, pode ocupar até 47 KiB e tem uma página de
-1 KiB reservada para metadados. O projeto inclui uma ferramenta Python para
-SocketCAN e uma aplicação relocada de teste.
+Não existe fallback para o protocolo v1 de IDs de 11 bits. Host, bootloader e
+aplicação de referência precisam ser v2.
 
-> **Estado da validação:** testes automatizados e builds não substituem a
-> validação elétrica e funcional. Hardware validation was not performed. Execute
-> a sessão A–J de [validação](Docs/VALIDATION.md) antes de considerar o sistema
-> validado em bancada.
+> **Escopo normativo:** o projeto implementa mecanismos de J1939-21/J1939-81 e
+> um perfil DM baseado em material público histórico de J1939-73. Ele não foi
+> certificado pela SAE e não deve ser apresentado como implementação integral
+> de J1939-73. Manifest, sessão, CRC e handoff são extensões CanLoader no PGN
+> Proprietary A `0xEF00`.
 
-## Características implementadas
+## Estado atual
 
-- boot window de 1500 ms quando existe aplicação válida;
-- permanência no bootloader quando a imagem está ausente ou inválida;
-- atualização single-slot com invalidação persistente antes de apagar a
-  aplicação;
-- frames DATA de até 5 bytes, blocos negociados de até 100 bytes e ACK por bloco;
-- detecção de sequência incorreta e tratamento idempotente de duplicatas;
-- CRC da imagem, validação do MSP e do Reset Handler e handoff para a aplicação;
-- limites de Flash definidos pelo firmware: o protocolo não recebe endereços
-  arbitrários do host;
-- CLI `canloader` com `info`, `update`, `verify` e `run`;
-- descoberta não invasiva com `ls`, UID físico, node ID persistente e
-  reendereçamento com `set-node`;
-- entrada remota no bootloader com `reboot`, usando reset e uma janela de 10 s;
-- aplicação de teste sem HAL, linkada em `0x08004000`, com padrão visual
-  diferente do bootloader.
+- target STM32F103C8Tx, 64 KiB de Flash e 20 KiB de SRAM;
+- CAN clássico, 500 kbit/s, quadros de dados estendidos de 29 bits;
+- preferred Source Address do target `0x80`; ferramenta de serviço `0xF9`;
+- NAME de desenvolvimento derivado deterministicamente do UID96 do STM32;
+- descoberta com Request/Address Claimed e identificação dirigida;
+- seleção segura do target por NAME, mesmo quando o Source Address muda;
+- atualização dirigida com DM14/DM15/DM16 e TP RTS/CTS;
+- reendereçamento persistente por Commanded Address via BAM;
+- CRC-32/ISO-HDLC, validação de vetores e metadata transacional;
+- entrada remota no bootloader a partir da aplicação;
+- host Python para SLCAN no macOS e SocketCAN no Linux;
+- testes C nativos e Python, além de aplicação relocada para ensaio em placa.
 
-O protocolo é **J1939-inspired, not SAE J1939 compliant**. Consulte as
-[limitações](Docs/LIMITATIONS.md) antes de usá-lo fora de uma bancada controlada.
+A validação elétrica e funcional em hardware continua sendo uma etapa separada.
+Execute [VALIDATION.md](Docs/VALIDATION.md) e registre as evidências antes de
+considerar uma versão liberada.
 
-## Hardware e configuração atual
+## Mapa de memória
+
+| Região | Intervalo | Tamanho |
+|---|---:|---:|
+| código do bootloader | `0x08000000..0x08004BFF` | 19 KiB |
+| configuração NAME/SA | `0x08004C00..0x08004FFF` | 1 KiB |
+| aplicação | `0x08005000..0x0800FBFF` | 43 KiB / 44032 bytes |
+| metadata | `0x0800FC00..0x0800FFFF` | 1 KiB |
+
+A aplicação deve ser linkada em `0x08005000`; binários antigos linkados em
+`0x08004000` não são válidos no v2 atual.
+
+O build integrado medido nesta revisão ocupa `text=16456`, `data=12` e
+`bss=1648` bytes. `text+data=16468` deixa 2988 bytes na região
+de código de 19456 bytes. Esses números são uma fotografia do build atual e
+devem ser medidos novamente antes da entrega final.
+
+## Hardware
 
 | Item | Configuração |
 |---|---|
-| MCU | STM32F103C8Tx, Cortex-M3, 64 KiB Flash, 20 KiB SRAM |
-| Clock | HSE 8 MHz, PLL x9, SYSCLK/HCLK 72 MHz, PCLK1 36 MHz |
-| CAN | bxCAN em modo normal, 500 kbit/s, prescaler 4, BS1 13 TQ, BS2 4 TQ, SJW 1 TQ |
-| Pinos CAN | PA11/CAN_RX e PA12/CAN_TX |
+| MCU | STM32F103C8Tx, Cortex-M3 |
+| Clock | HSE 8 MHz, PLL ×9, SYSCLK/HCLK 72 MHz, PCLK1 36 MHz |
+| CAN | bxCAN normal, 500 kbit/s, prescaler 4, BS1 13 TQ, BS2 4 TQ, SJW 1 TQ |
+| Pinos | PA11/CAN_RX e PA12/CAN_TX |
 | LED | PC13, ativo em nível baixo |
-| Nó | 1 por padrão; configurável e persistente (`0x600/0x700/0x580 + node`) |
+| Flash | página de erase 1024 bytes, programação por halfword |
 
-O STM32 precisa de um transceptor CAN externo. Ligue CAN_H, CAN_L e GND comum,
-com 120 Ω em cada extremidade física do barramento. Não conecte diretamente os
-pinos PA11/PA12 à linha diferencial.
-
-## Estrutura
-
-```text
-Application/             máquina de estados, metadados, validação e jump
-Protocol/                protocolo binário e CRC portáteis
-Portable/Inc/            contratos abstratos de CAN, Flash e plataforma
-Portable/stm32f1/Src/    implementações STM32F1/HAL/bxCAN/FPEC
-Config/                  mapa do target, IDs e timeouts
-Core/ e Drivers/         projeto STM32CubeMX/HAL/CMSIS
-Tools/canloader/         pacote e CLI Python/python-can
-TestApplication/         firmware relocável usado na validação
-Tests/                   testes C e Python sem hardware
-Docs/                    arquitetura, memória, protocolo e validação
-```
-
-O fluxo de dependências e o procedimento para um futuro STM32G0 estão em
-[ARCHITECTURE.md](Docs/ARCHITECTURE.md).
-
-## Pré-requisitos
-
-- GNU Make e o GNU Arm Embedded Toolchain (`arm-none-eabi-gcc`);
-- Python 3.10 ou superior;
-- `python-can` para acesso ao barramento;
-- Linux/SocketCAN e `can-utils` para a validação descrita aqui;
-- STM32CubeProgrammer CLI e ST-LINK para a gravação inicial;
-- target STM32F103C8Tx, transceptor CAN e interface USB–CAN compatível com
-  SocketCAN.
-
-O `Makefile` procura primeiro o toolchain instalado como plugin do
-STM32CubeIDE e, se não o encontrar, usa `arm-none-eabi-*` do `PATH`.
+O STM32 precisa de transceptor CAN externo. Conecte CAN_H, CAN_L e GND comum e
+use 120 Ω em cada extremidade física do barramento. PA11/PA12 não podem ser
+ligados diretamente ao par diferencial.
 
 ## Build e testes
+
+Pré-requisitos principais:
+
+- GNU Make e `arm-none-eabi-gcc`;
+- Python 3.10 ou superior para a ferramenta host;
+- STM32CubeProgrammer/ST-LINK para a instalação inicial;
+- `python-can` e `pyserial` para o host.
 
 Na raiz do repositório:
 
@@ -93,97 +83,175 @@ make test-application
 make test
 ```
 
-Os principais alvos são:
+Artefatos principais:
 
-| Alvo | Resultado |
+| Alvo | Saída |
 |---|---|
-| `make bootloader` | `build/bootloader/CanLoader.elf`, `.bin`, `.hex`, `.map` e `.list` |
-| `make test-application` | `TestApplication/build/canloader_test_app.elf`, `.bin`, `.hex` e `.map` |
-| `make all` | bootloader e aplicação de teste |
-| `make test-c` | testes nativos do protocolo, máquina de estados, metadata e imagem |
-| `make test-python` | testes da serialização, cliente, retries, barramento e CLI |
+| `make bootloader` | `build/bootloader/CanLoader.{elf,bin,hex,map,list}` |
+| `make test-application` | `TestApplication/build/canloader_test_app.{elf,bin,hex,map}` |
+| `make test-c` | testes nativos de protocolo, TP, claim, FSM, config e metadata |
+| `make test-python` | serialização, scanner, cliente, TP, retries e CLI |
 | `make test` | testes C e Python |
-| `make clean` | remove apenas artefatos gerados pelos Makefiles |
 
-O bootloader também pode ser importado no STM32CubeIDE. As configurações Debug
-e Release usam `STM32F103C8TX_FLASH.ld` e incluem `Application`, `Protocol` e
-`Portable`. O firmware de teste tem Makefile e linker próprios.
+O Makefile procura primeiro o toolchain empacotado no STM32CubeIDE e depois
+`arm-none-eabi-*` no `PATH`.
 
-## Instalação da ferramenta host
+## Instalação da CLI
+
+Use Python 3.10+; o Python 3.9 fornecido por versões antigas do Xcode não atende
+ao pacote atual.
 
 ```sh
-python3 -m venv .venv
+python3.12 -m venv .venv
 . .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -e Tools/canloader
+canloader --version
 ```
 
-A CLI não configura `can0` e nunca executa `sudo`. A configuração da interface
-é responsabilidade do operador.
+Se a criação do ambiente for interrompida, remova ou renomeie apenas aquela
+pasta incompleta e recrie o ambiente. Não tente ativar `.venv/bin/activate`
+antes de o comando `venv` terminar.
 
-## Quick start
+## Uso no macOS com SLCAN
 
-Este exemplo pressupõe que o hardware está montado, o bootloader e a aplicação
-de teste foram compilados e a virtual environment acima está ativa.
-
-1. Para uma primeira sessão controlada, apague a Flash e grave o bootloader. O
-   apagamento total também remove qualquer aplicação e metadata anteriores:
-
-   ```sh
-   STM32_Programmer_CLI -c port=SWD -e all
-   STM32_Programmer_CLI -c port=SWD -w build/bootloader/CanLoader.bin 0x08000000 -v -rst
-   ```
-
-2. Configure o SocketCAN a 500 kbit/s:
-
-   ```sh
-   sudo ip link set can0 down
-   sudo ip link set can0 type can bitrate 500000 restart-ms 100
-   sudo ip link set can0 up
-   ip -details -statistics link show can0
-   ```
-
-3. Descubra os nós, consulte o target e envie a aplicação:
-
-   ```sh
-   python -m canloader ls --interface socketcan --channel can0
-   python -m canloader info --interface socketcan --channel can0 --node 1
-   python -m canloader update TestApplication/build/canloader_test_app.bin --interface socketcan --channel can0 --node 1 --run
-   ```
-
-Depois que a aplicação de teste estiver executando, ela continua respondendo a
-`ls` e pode retornar ao bootloader sem RESET físico:
+No macOS não existe normalmente uma interface `can0`. O canal SLCAN é a porta
+serial do adaptador. Para identificá-la:
 
 ```sh
-python -m canloader reboot --interface socketcan --channel can0 --node 1
-python -m canloader set-node 7 --interface socketcan --channel can0 --node 1
+ls /dev/cu.*
 ```
 
-`set-node` deve ser enviado ao bootloader no endereço atual. Ele grava a página
-de configuração, responde no endereço antigo, reinicia e confirma o endereço
-novo. Updates da aplicação não apagam essa configuração; erase total por SWD
-apaga e restaura o default 1.
+Compare a lista antes e depois de conectar o adaptador e prefira `/dev/cu.*` a
+`/dev/tty.*`. Exemplo:
 
-Os defaults do host são timeout normal de 0,5 s, timeout de erase de 4 s e três
-retransmissões depois da tentativa inicial. Use `--verbose` para registrar frames.
+```sh
+canloader ls \
+  --interface slcan \
+  --channel /dev/cu.usbmodem2074318558421 \
+  --bitrate 500000 \
+  --verbose
+```
 
-## Indicações do LED
+Todos os frames v2 são estendidos. Em uma captura Lawicel/SLCAN eles aparecem
+como frames `T`; frames `t` de 11 bits são v1 ou tráfego alheio.
 
-| Situação | PC13 |
+Depois de obter o NAME com `ls`, bloqueie a identidade nas operações mutáveis:
+
+```sh
+TARGET_NAME=0x8000000000123456
+PORT=/dev/cu.usbmodem2074318558421
+
+canloader info --interface slcan --channel "$PORT" \
+  --address 0x80 --name "$TARGET_NAME"
+
+canloader update TestApplication/build/canloader_test_app.bin \
+  --interface slcan --channel "$PORT" \
+  --address 0x80 --name "$TARGET_NAME" --run
+```
+
+`--address` é a rota observada; `--name` é a identidade. Se o target perder uma
+disputa e mudar de SA, execute `ls` novamente e use o SA anunciado para o mesmo
+NAME.
+
+## Uso no Linux com SocketCAN
+
+```sh
+sudo ip link set can0 down
+sudo ip link set can0 type can bitrate 500000 restart-ms 100
+sudo ip link set can0 up
+ip -details -statistics link show can0
+
+canloader ls --interface socketcan --channel can0
+canloader info --interface socketcan --channel can0 \
+  --address 0x80 --name 0x8000000000123456
+```
+
+A CLI usa CAN raw e implementa claim/TP em user space. Não compartilhe o mesmo
+Source Address entre essa pilha e um socket `CAN_J1939` do kernel.
+
+## Comandos
+
+| Comando | Efeito |
 |---|---|
-| boot window com imagem válida | aceso por até 1500 ms |
+| `canloader ls` | solicita Address Claimed e identifica individualmente nós CanLoader |
+| `canloader info` | lê capabilities, memória, UID, NAME e SA |
+| `canloader update IMAGE.bin` | abre manifest, apaga, escreve, finaliza e verifica |
+| `canloader verify` | recalcula e valida a imagem armazenada |
+| `canloader run` | executa uma aplicação válida |
+| `canloader reboot` | pede à aplicação que reinicie no bootloader |
+| `canloader set-address NEW_SA` | envia Commanded Address ao NAME bloqueado |
+
+Os parâmetros comuns incluem `--address`, `--name`, `--source-address`,
+`--source-name`, `--timeout`, `--transport-timeout`, `--erase-timeout`,
+`--scan-timeout`, `--retries` e `--verbose`. O timeout TP default do host é
+1,5 s, maior que o deadline de progresso de 1,25 s do target.
+
+## Fluxo resumido do update
+
+```text
+Request/Address Claimed + IDENTIFY
+        -> START_UPDATE(size)
+        -> SET_IMAGE_CRC(crc32)
+        -> DM14 ERASE / DM15 / close
+        -> [DM14 WRITE / DM15 PROCEED / DM16 direto (1..7)
+            ou via TP (8..100) /
+            DM15 COMPLETED / close] × blocos
+        -> FINALIZE
+        -> VERIFY
+        -> RUN opcional
+```
+
+O bloco de escrita é 100 bytes, salvo o último. O ERASE expressa quantidade de
+páginas de 1024 bytes, não bytes. A sessão proprietária não ocupa o campo
+`Key/User_Level` de DM14; este perfil transmite `0xFFFF`.
+
+## Aplicação e retorno ao bootloader
+
+A aplicação deve compartilhar NAME e preferred SA com o bootloader, executar
+Address Claim, responder a `IDENTIFY`/`INFO` e aceitar
+`ENTER_BOOTLOADER=0x33` no PGN Proprietary A dirigido. Ela grava a assinatura
+transitória `0xB007/0x4C44` em backup registers, tenta entregar o ACK e reinicia.
+O bootloader consome a assinatura uma única vez e permanece disponível por 10 s.
+
+```sh
+canloader reboot --interface slcan --channel "$PORT" \
+  --address 0x80 --name "$TARGET_NAME"
+```
+
+## LED
+
+| Estado | PC13 |
+|---|---|
+| boot window com imagem válida | aceso por até 1500 ms; até 10000 ms após pedido da aplicação |
 | aguardando host | alterna a cada 500 ms |
 | preparação, erase, recepção ou verificação | alterna a cada 125 ms |
-| imagem pronta / pedido de execução | apagado até o jump |
-| erro de inicialização do bootloader | alterna a cada 100 ms |
-| aplicação de teste | duas piscadas de 80 ms, separadas por 100 ms, e pausa de 740 ms |
-| erro de IRQ no handoff detectado pela aplicação | continuamente aceso |
+| imagem pronta / handoff | apagado |
+| erro de inicialização | alterna a cada 100 ms |
+| aplicação de referência | duas piscadas curtas e pausa |
+| aplicação detectou handoff com IRQ mascarada | continuamente aceso |
+
+## Estrutura
+
+```text
+Application/             FSM, configuração, metadata, imagem e handoff
+Protocol/                J1939, Address Claim, TP, CanLoader e CRC
+Portable/Inc/            contratos de CAN, Flash e plataforma
+Portable/stm32f1/Src/    HAL/bxCAN/FPEC/Cortex-M3
+Config/                  mapa, NAME default, limites e timers
+Tools/canloader/         pacote Python e CLI
+TestApplication/         aplicação relocada de validação
+Tests/                   testes C e Python sem hardware
+Docs/                    contrato, arquitetura, memória e evidências
+```
 
 ## Documentação
 
-- [Implementação técnica completa e requisitos](Docs/IMPLEMENTACAO_BOOTLOADER.md)
+- [Implementação técnica completa](Docs/IMPLEMENTACAO_BOOTLOADER.md)
+- [Contrato on-wire v2](Docs/PROTOCOL.md)
+- [Migração incompatível v1 → v2](Docs/MIGRATION_V1_TO_V2.md)
 - [Arquitetura e portabilidade](Docs/ARCHITECTURE.md)
-- [Mapa de memória e metadata](Docs/MEMORY_MAP.md)
-- [Protocolo CAN v1](Docs/PROTOCOL.md)
-- [Sessão de validação A–J](Docs/VALIDATION.md)
-- [Limitações conhecidas](Docs/LIMITATIONS.md)
-- [Divergências em relação ao TCC](Docs/TCC_DIVERGENCES.md)
+- [Mapa de memória e formatos persistentes](Docs/MEMORY_MAP.md)
+- [Plano de validação](Docs/VALIDATION.md)
+- [Limitações e ameaças](Docs/LIMITATIONS.md)
+- [Relação com o TCC](Docs/TCC_DIVERGENCES.md)

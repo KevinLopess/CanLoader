@@ -1,1502 +1,1170 @@
-# Implementação técnica completa do CanLoader
+# Implementação técnica completa do CanLoader v2
 
 | Campo | Valor |
 |---|---|
-| documento | especificação *as built* revisada em 19 de agosto de 2026 |
-| target | STM32F103C8Tx / Cortex-M3 |
-| wire protocol | CanLoader v1 |
-| bitrate do target | 500 kbit/s |
-| estado | software compilado/testado; validação física pendente |
+| target de referência | STM32F103C8Tx / Cortex-M3 / Blue Pill |
+| protocolo on-wire | CanLoader v2, exclusivamente |
+| enlace | CAN clássico, CEFF de 29 bits, 500 kbit/s |
+| estado da evidência | build e testes automatizados; campanha HIL ainda obrigatória |
+| fonte de verdade | código, linkers, testes e pacote Python deste repositório |
 
-## Sumário
+## 1. Finalidade, versão e estado
 
-- [1. Objetivo e escopo deste documento](#1-objetivo-e-escopo-deste-documento)
-- [2. Visão geral do sistema](#2-visão-geral-do-sistema)
-- [3. Requisitos utilizados na construção](#3-requisitos-utilizados-na-construção)
-- [4. Arquitetura de software](#4-arquitetura-de-software)
-- [5. Configuração concreta do STM32F103C8Tx](#5-configuração-concreta-do-stm32f103c8tx)
-- [6. Mapa de memória](#6-mapa-de-memória)
-- [7. Configuração persistente do dispositivo](#7-configuração-persistente-do-dispositivo)
-- [8. Metadata da imagem e transação persistente](#8-metadata-da-imagem-e-transação-persistente)
-- [9. Inicialização e decisão de boot](#9-inicialização-e-decisão-de-boot)
-- [10. Máquina de estados](#10-máquina-de-estados)
-- [11. Protocolo CAN v1](#11-protocolo-can-v1)
-- [12. CRC-32/ISO-HDLC](#12-crc-32iso-hdlc)
-- [13. Fluxo completo de atualização](#13-fluxo-completo-de-atualização)
-- [14. Validação da imagem e handoff](#14-validação-da-imagem-e-handoff)
-- [15. Contrato exigido da aplicação](#15-contrato-exigido-da-aplicação)
-- [16. Operação com vários dispositivos](#16-operação-com-vários-dispositivos)
-- [17. Ferramenta host Python](#17-ferramenta-host-python)
-- [18. Requisitos e processo de build](#18-requisitos-e-processo-de-build)
-- [19. Gravação inicial e primeiro update](#19-gravação-inicial-e-primeiro-update)
-- [20. Tratamento de falhas](#20-tratamento-de-falhas)
-- [21. Testes e critérios de aceitação](#21-testes-e-critérios-de-aceitação)
-- [22. Limitações e requisitos não atendidos](#22-limitações-e-requisitos-não-atendidos)
-- [23. Portabilidade para outro MCU](#23-portabilidade-para-outro-mcu)
-- [24. Checklist de implementação e liberação](#24-checklist-de-implementação-e-liberação)
-- [25. Glossário e convenções](#25-glossário-e-convenções)
-- [26. Referências internas](#26-referências-internas)
+Este documento registra como o bootloader foi construído, quais requisitos
+dirigiram as decisões e quais garantias a implementação realmente oferece. Ele
+cobre firmware embarcado, aplicação de referência, ferramenta host, protocolo,
+persistência, build, testes e limitações.
 
-## 1. Objetivo e escopo deste documento
+O sistema atual é **v2-only**:
 
-Este documento especifica, de forma consolidada, a implementação do bootloader
-CanLoader existente neste repositório. Ele descreve os requisitos usados no
-projeto, as decisões arquiteturais, o mapa de memória, os formatos persistentes,
-a máquina de estados, o protocolo CAN, a ferramenta de host, a integração que a
-aplicação deve realizar, o processo de construção, a gravação inicial, os testes
-e as limitações conhecidas.
+- `BOOT_PROTOCOL_VERSION=2` no target;
+- `PROTOCOL_VERSION=2` no pacote Python;
+- todos os frames de aplicação usam CAN clássico com ID estendido de 29 bits;
+- não há parser, filtro, resposta ou fallback para os IDs standard do v1;
+- toda aplicação atual deve ser linkada em `0x08005000`.
 
-O documento trata como fonte de verdade o código-fonte atual, principalmente:
+O contrato byte a byte completo está em [PROTOCOL.md](PROTOCOL.md). A mudança
+incompatível e sua justificativa estão em
+[MIGRATION_V1_TO_V2.md](MIGRATION_V1_TO_V2.md).
 
-- [`Config/boot_config.h`](../Config/boot_config.h), para constantes do target;
-- [`Application/Src/bootloader.c`](../Application/Src/bootloader.c), para a
-  máquina de estados e as regras da atualização;
-- [`Application/Src/boot_metadata.c`](../Application/Src/boot_metadata.c) e
-  [`Application/Src/boot_image.c`](../Application/Src/boot_image.c), para
-  persistência e validação;
-- [`Protocol/`](../Protocol), para o wire protocol e o CRC;
-- [`Portable/stm32f1/Src/`](../Portable/stm32f1/Src), para o port do
-  STM32F103/bxCAN/Flash/Cortex-M3;
-- [`Tools/canloader/`](../Tools/canloader), para o cliente e a CLI Python;
-- [`TestApplication/`](../TestApplication), como implementação de referência do
-  contrato exigido da aplicação.
+### 1.1 Declaração normativa
 
-O target entregue é o **STM32F103C8Tx**, normalmente usado na placa Blue Pill.
-O protocolo é proprietário e usa conceitos de diagnóstico, fragmentação e
-confirmação comuns em redes veiculares, porém é **J1939-inspired, not SAE J1939
-compliant**.
+O v2 usa três categorias claramente separadas:
 
-> **Estado de validação:** o firmware e as ferramentas possuem testes
-> automatizados e são compiláveis, mas os ensaios elétricos e funcionais em
-> hardware descritos em [`VALIDATION.md`](VALIDATION.md) ainda precisam ser
-> registrados. Portanto, até essa campanha ser executada, vale a afirmação:
-> **Hardware validation was not performed.**
-
----
-
-## 2. Visão geral do sistema
-
-O sistema contém quatro participantes principais:
-
-```text
-                         computador do operador
-                   +------------------------------+
-arquivo .bin -----> | canloader CLI / python-can  |
-                   +---------------+--------------+
-                                   |
-                        USB-CAN / SLCAN / SocketCAN
-                                   |
-               CAN_H/CAN_L, 500 kbit/s, CAN clássico
-                                   |
-         +-------------------------+-------------------------+
-         |                         |                         |
-  +------+-------+          +------+-------+          +------+-------+
-  | transceptor  |          | transceptor  |          | transceptor  |
-  | + STM32 nó 1 |          | + STM32 nó 7 |   ...    | + STM32 nó N |
-  +------+-------+          +------+-------+          +------+-------+
-         |                         |                         |
-  bootloader/app             bootloader/app             bootloader/app
-```
-
-O host nunca recebe permissão para escrever em um endereço absoluto. Ele
-seleciona um node ID, anuncia tamanho e CRC, e envia dados sequenciais. O
-firmware transforma esses dados em offsets relativos exclusivamente dentro da
-partição da aplicação.
-
-Cada dispositivo tem duas formas de identificação:
-
-1. **node ID lógico**, configurável entre 1 e 127 e persistido em Flash;
-2. **UID físico de 96 bits**, fornecido pelo próprio STM32 e somente consultado.
-
-O node ID determina os identificadores CAN usados em operações unicast. O UID é
-usado para inventário e conferência de identidade, mas não autentica o
-dispositivo e não participa de nenhuma decisão criptográfica.
-
----
-
-## 3. Requisitos utilizados na construção
-
-As tabelas seguintes transformam as restrições do código e as decisões do
-projeto em requisitos rastreáveis. “Atendido” significa implementado no estado
-atual; não significa necessariamente validado em bancada.
-
-### 3.1 Requisitos de hardware e plataforma
-
-| ID | Requisito | Atendimento e verificação |
+| Categoria | Elementos | Alegação permitida |
 |---|---|---|
-| `HW-01` | O primeiro target deve ser um STM32F103C8Tx/Cortex-M3 com pelo menos 64 KiB de Flash e 20 KiB de SRAM. | `boot_config.h` fixa esses limites e `boot_flash_init()` lê `FLASHSIZE_BASE`, recusando capacidade inferior a 64 KiB. |
-| `HW-02` | O bootloader deve partir da Flash principal em `0x08000000`. | Startup, linker e vetor do bootloader usam essa origem. Em operação normal, BOOT0 deve selecionar a Flash principal. |
-| `HW-03` | O clock do bootloader deve usar HSE de 8 MHz, PLL x9, SYSCLK/HCLK de 72 MHz e PCLK1 de 36 MHz. | Configurado em `Core/Src/main.c` e no arquivo `CanLoader.ioc`. |
-| `HW-04` | A comunicação deve usar CAN1/bxCAN nos pinos PA11 (`CAN_RX`) e PA12 (`CAN_TX`). | Configuração MSP/HAL do port STM32F1. |
-| `HW-05` | A camada física deve usar transceptor CAN externo; PA11/PA12 não podem ser ligados diretamente a CAN_H/CAN_L. | Requisito elétrico de integração. O firmware controla apenas bxCAN em nível lógico. |
-| `HW-06` | O barramento deve possuir CAN_H, CAN_L e referência de GND comum, com 120 Ω em cada extremidade física. | Requisito de montagem e validação de bancada. Duas terminações resultam em aproximadamente 60 Ω com a rede desligada. |
-| `HW-07` | O LED de estado deve estar em PC13 e ser ativo em nível baixo. | `main.h` e `BOOT_LED_ACTIVE_LOW`. |
-| `HW-08` | Erase de Flash deve ocorrer em páginas de 1024 bytes e programação em halfwords de 2 bytes. | `BOOT_FLASH_PAGE_SIZE`, `BOOT_FLASH_PROGRAM_UNIT` e `_Static_assert` contra a HAL. |
-| `HW-09` | A gravação inicial do bootloader deve ser feita por SWD/ST-LINK ou mecanismo equivalente. | O protocolo atual atualiza apenas a partição da aplicação; não existe self-update do bootloader. |
+| J1939-21/J1939-81 | CEFF de 29 bits, PGN/PDU, NAME, Address Claim, Request, Commanded Address e TP clássico | mecanismos J1939 implementados; requer validação final contra edição licenciada |
+| subset diagnóstico | layouts e estados selecionados de DM14/DM15/DM16 | baseado em material público histórico de J1939-73; não é conformidade integral atual |
+| CanLoader Proprietary A | identidade do produto, manifest, sessão, CRC, finalização, execução e aborto | extensão proprietária documentada no PGN `0xEF00` |
 
-### 3.2 Requisitos funcionais do bootloader
+Não houve certificação SAE. Os bytes 2..4 de DM15 carregam códigos internos
+CanLoader e não devem ser chamados de EDCP/Error Indicator normativo.
 
-| ID | Requisito | Atendimento e verificação |
+### 1.2 Por que a versão 2 substitui, em vez de coexistir com, a versão 1
+
+A escolha de uma versão única foi deliberada para o TCC II. Um firmware
+dual-stack precisaria manter simultaneamente dois esquemas de ID, descoberta,
+fragmentação, endereçamento, persistência e teste. Além do custo de Flash, isso
+criaria uma ambiguidade importante: o target poderia ser identificado por um
+`node_id` antigo em um fluxo e por NAME/SA em outro. O v2 elimina essa dupla
+autoridade e torna observável, em toda operação, qual identidade está sendo
+atualizada.
+
+Esta tabela é histórica; os valores antigos abaixo não são aceitos pelo software
+atual:
+
+| Decisão | Implementação anterior | Implementação v2-only | Motivo |
+|---|---|---|---|
+| CAN-ID | standard de 11 bits | CEFF estendido de 29 bits | representar prioridade, PGN, SA e DA J1939 |
+| identidade | `node_id` 1..127 | NAME de 64 bits | separar identidade estável da rota mutável |
+| descoberta | broadcast proprietário | Request + Address Claimed + IDENTIFY | inventariar qualquer CA J1939 e depois reconhecer CanLoader |
+| reendereçamento | comando de node | Commanded Address por NAME/BAM | atingir somente o NAME escolhido |
+| transferência longa | fragmentação própria | TP RTS/CTS; BAM restrito | reutilizar controle de fluxo e sequenciamento J1939 |
+| acesso à imagem | comandos proprietários | subset DM14/DM15/DM16 | modelar erase/write como operações de memória |
+| ciclo de produto | misturado ao transporte | Proprietary A separado | manter manifest, sessão e boot fora do subset DM |
+| aplicação | base `0x08004000` | base `0x08005000` | acomodar a pilha v2 e o journal persistente |
+
+Não existe negociação automática. Um host antigo não atualiza o target v2,
+um host v2 não tenta frames antigos, e a troca inicial do próprio bootloader é
+feita por SWD/ST-LINK. A atualização por CAN continua limitada à partição da
+aplicação.
+
+## 2. Escopo funcional
+
+O bootloader deve:
+
+1. permanecer recuperável quando não existir aplicação válida;
+2. descobrir e reivindicar endereço em uma rede J1939;
+3. expor identidade NAME estável e UID físico;
+4. permitir que o host escolha um único NAME entre vários dispositivos;
+5. receber manifest, apagar e escrever somente a partição da aplicação;
+6. detectar corrupção e vetores inválidos antes do jump;
+7. não executar imagem parcial após reset/queda de energia;
+8. permitir verificação e execução explícitas;
+9. permitir que a aplicação solicite retorno remoto ao bootloader;
+10. persistir preferred Source Address sem ser apagado por update;
+11. funcionar por SLCAN no macOS e SocketCAN no Linux;
+12. ser testável em C/Python sem hardware e validável em placa.
+
+### 2.1 Fora do escopo desta revisão
+
+- assinatura/secure boot, criptografia e autenticação do Tool;
+- anti-rollback e política de versão da imagem;
+- slot A/B ou resume persistente;
+- CAN FD, ETP e payloads acima de 1785 bytes;
+- READ remoto, DM18, EDCP ou seed-key;
+- provisionamento remoto do NAME de produção;
+- port funcional para outro MCU;
+- certificação SAE ou validação física já concluída.
+
+## 3. Requisitos de construção
+
+### 3.1 Hardware e plataforma
+
+| ID | Requisito | Implementação/verificação |
 |---|---|---|
-| `RF-01` | Ao ligar, o bootloader deve validar a imagem antes de decidir executá-la. | Metadata, estado persistente, tamanho, CRC, MSP e Reset Handler são relidos. |
-| `RF-02` | Com imagem válida, deve existir uma janela normal de 1500 ms para o host assumir o controle. | Estado `BOOT_WINDOW` e `BOOT_WINDOW_MS`. |
-| `RF-03` | Sem imagem válida, o dispositivo deve permanecer recuperável no bootloader indefinidamente. | Inicialização segue diretamente para `WAIT_HOST`; não há expiração nesse estado. |
-| `RF-04` | A aplicação deve poder solicitar reboot para o bootloader por CAN. | Comando `ENTER_BOOTLOADER`, contrato de registradores BKP e reset de sistema. |
-| `RF-05` | Um reboot solicitado pela aplicação deve manter o bootloader disponível por 10 s. | Magias em `BKP->DR1/DR2`, consumo one-shot e `BOOT_REQUEST_WINDOW_MS`. |
-| `RF-06` | O host deve consultar versão, target, mapa da aplicação, tamanho/CRC armazenados e UID. | `DISCOVER`, `INFO` e `PROBE`. |
-| `RF-07` | O host deve transferir uma imagem binária sequencialmente, sem fornecer endereços absolutos. | `START_UPDATE`, blocos, frames `DATA` e regiões abstratas de Flash. |
-| `RF-08` | A imagem somente deve tornar-se executável depois de transferência, CRC e vetores válidos. | Marker `VALID` é o último compromisso persistente da transação. |
-| `RF-09` | O host deve poder verificar e executar uma imagem já persistida. | `VERIFY` e `RUN_APPLICATION`. |
-| `RF-10` | O host deve poder abortar uma sessão. | `ABORT`, limpeza do contexto e invalidação quando a aplicação já foi apagada. |
-| `RF-11` | O dispositivo deve sinalizar visualmente espera, atualização, prontidão e erro. | Máquina de LED baseada no estado. |
+| HW-01 | Executar no STM32F103C8Tx com pelo menos 64 KiB Flash/20 KiB SRAM. | registrador de tamanho da Flash + linker/asserts |
+| HW-02 | Usar CAN clássico a 500 kbit/s. | bxCAN normal; timing distinto porém equivalente no bootloader e app |
+| HW-03 | Usar transceptor externo em PA11/PA12. | pinagem CubeMX e documentação elétrica |
+| HW-04 | Sinalizar estados em PC13 ativo-baixo. | `boot_platform_led_set` e FSM |
+| HW-05 | Programar Flash por unidade física de 2 bytes e apagar por 1 KiB. | port FPEC/HAL com alinhamento e readback |
+| HW-06 | Operar sem heap e sem RTOS. | buffers/contexto estáticos e laço cooperativo |
+| HW-07 | Usar CAN_H/CAN_L, GND comum e duas terminações de 120 Ω nas extremidades. | requisito de montagem/HIL |
+| HW-08 | Instalar ou migrar o bootloader por SWD, com boot pela Flash principal. | protocolo não grava sua própria partição |
 
-### 3.3 Requisitos de múltiplos dispositivos
+### 3.2 Boot e imagem
 
-| ID | Requisito | Atendimento e verificação |
+| ID | Requisito | Implementação/verificação |
 |---|---|---|
-| `MULTI-01` | Cada dispositivo deve possuir node ID lógico no intervalo 1..127. | IDs CAN são calculados como base + node; validação existe em C e Python. |
-| `MULTI-02` | O node ID deve sobreviver a reset e atualização da aplicação. | Registro próprio na página `0x08003C00`, fora da área da aplicação. |
-| `MULTI-03` | Configuração ausente/corrompida deve ter fallback determinístico. | O default é node 1. |
-| `MULTI-04` | Deve ser possível alterar o node ID pela rede, somente por unicast. | `SET_NODE_ID`; gravação, readback, ACK no ID antigo e reset. |
-| `MULTI-05` | Deve existir inventário que não capture o autoboot nem altere estado persistente. | Quatro broadcasts `PROBE`; comando `canloader ls`. A consulta ainda conta como atividade para o timeout de transferência. |
-| `MULTI-06` | O inventário deve expor o UID STM32 de 96 bits. | Leitura de três words em `UID_BASE`; impressão como 24 dígitos hexadecimais. |
-| `MULTI-07` | Atualizações mutáveis devem atingir somente o node explicitamente selecionado. | Comandos de update são unicast; broadcasts mutáveis são ignorados. |
-| `MULTI-08` | A aplicação deve continuar identificável enquanto estiver executando. | A aplicação de referência responde `PROBE` e marca `APPLICATION_RUNNING`. |
+| BOOT-01 | Com imagem válida, aguardar 1500 ms antes de autoboot. | `BOOT_WINDOW_MS` |
+| BOOT-02 | Após pedido da aplicação, aguardar 10000 ms. | backup registers + `BOOT_REQUEST_WINDOW_MS` |
+| BOOT-03 | Sem imagem válida, permanecer em serviço. | `WAIT_HOST`, sem reset loop |
+| BOOT-04 | Validar metadata, tamanho, CRC, MSP e Reset Handler. | `boot_metadata`, `boot_image` |
+| BOOT-05 | Relocar vector table e restaurar estado ARM no handoff. | `prepare_handoff` + rotina assembly |
+| BOOT-06 | Tentar entregar ACK antes de jump/reset, sem bloquear indefinidamente. | atraso 50 ms; limite absoluto 250 ms |
 
-### 3.4 Requisitos de integridade, recuperação e robustez
+### 3.3 Rede e identidade
 
-| ID | Requisito | Atendimento e verificação |
+| ID | Requisito | Implementação/verificação |
 |---|---|---|
-| `ROB-01` | Uma imagem parcial ou com CRC incorreto nunca deve ser executada. | Estados persistentes `UPDATING`/`INVALID`, CRC e validação antes de todo jump. |
-| `ROB-02` | A invalidação persistente deve preceder o erase da aplicação. | `boot_metadata_begin()` é gravado e relido antes de apagar a primeira página da aplicação. |
-| `ROB-03` | Erase e programação devem respeitar região, limite e alinhamento. | API `boot_flash_*`, regiões fechadas e validação antes do endereço físico. |
-| `ROB-04` | Erase e programação devem possuir readback. | O port F1 confere `0xFFFF` após erase e cada halfword após programar. |
-| `ROB-05` | Transferências devem usar sessão não zero e rejeitar sessão divergente. | Sessão de 8 bits, `session_matches()` e NACK `SESSION`. |
-| `ROB-06` | Blocos e frames devem ser estritamente sequenciais. | Índice, sequência, tamanho e offset esperado são conferidos. |
-| `ROB-07` | Repetições causadas por perda de ACK não devem reprogramar dados divergentes. | BEGIN/DATA duplicados possuem tratamento idempotente e conferência de payload/bytes comprometidos. |
-| `ROB-08` | Uma sessão sem atividade reconhecida deve expirar. | Timeout de 5000 ms em `PREPARE_UPDATE` e `RECEIVE`; consultas bem formadas também renovam o timer, conforme detalhado adiante. |
-| `ROB-09` | O host deve retransmitir controles e blocos após timeout recuperável. | Default de três retransmissões além da tentativa inicial. |
-| `ROB-10` | O ACK de execução/reconfiguração deve ter oportunidade de sair antes de jump/reset, sem bloquear para sempre. | Atraso mínimo de 50 ms, mailbox ocioso e limite absoluto de 250 ms. |
-| `ROB-11` | O handoff deve remover estado residual do bootloader. | Deinit de CAN/RCC/HAL, SysTick desligado, IRQs limpas, VTOR/MSP e máscaras restaurados. |
-| `ROB-12` | O firmware não deve depender de alocação dinâmica. | Contexto e buffer são estáticos; heap do linker do bootloader é zero. |
+| NET-01 | Transmitir somente frames extended/data no perfil. | tipo explícito em `boot_can_frame_t` |
+| NET-02 | Ter NAME determinístico e preferred SA persistente. | journal v2 e default derivado do UID96 |
+| NET-03 | Executar Address Claim e aguardar 250 ms. | FSM de claim |
+| NET-04 | Menor NAME vence conflito. | comparação uint64 numérica |
+| NET-05 | Target AAC deve procurar fallback e poder anunciar Cannot Claim. | faixa `0x80..0xF7`, SA `0xFE` |
+| NET-06 | Responder Request for Address Claimed. | PGN `0xEA00` global/local |
+| NET-07 | Reendereçar por NAME sem afetar outro ECU. | Commanded Address/BAM |
+| NET-08 | Host deve selecionar alvo por NAME e rota atual por SA. | AddressBook e identity lock |
+| NET-09 | Nunca transmitir resposta enfileirada com SA que acabou de ser perdido. | limpeza da fila + abort dos mailboxes antes do novo filtro |
 
-### 3.5 Requisitos de protocolo e host
+### 3.4 Transporte e protocolo
 
-| ID | Requisito | Atendimento e verificação |
+| ID | Requisito | Implementação/verificação |
 |---|---|---|
-| `PROTO-01` | Usar CAN clássico, data frames, IDs padrão de 11 bits e no máximo 8 bytes. | Implementado no port e validado nos decoders. |
-| `PROTO-02` | Operar a 500 kbit/s no target STM32F1. | PCLK1 36 MHz, prescaler 4, 18 TQ por bit. |
-| `PROTO-03` | Campos multibyte devem ser little-endian. | Helpers equivalentes em C e Python. |
-| `PROTO-04` | A versão inicial do wire protocol deve ser 1. | Byte `version=0x01`; versão diferente recebe NACK. |
-| `PROTO-05` | O firmware deve responder com ACK/NACK correlacionado por comando e sessão. | Resposta de 8 bytes no ID `0x580 + node`. |
-| `HOST-01` | A ferramenta deve executar em Python 3.10 ou superior. | Declarado em `pyproject.toml`; Python 3.9 não é suportado. |
-| `HOST-02` | Acesso CAN deve ser abstraído por `python-can`. | Dependência `python-can>=4.3` e adaptador `PythonCanBus`. |
-| `HOST-03` | SLCAN serial deve possuir suporte Python instalado. | Dependência `pyserial>=3.5`. |
-| `HOST-04` | A CLI não deve elevar privilégios nem executar configuração SocketCAN do sistema. | SocketCAN é configurado externamente; no SLCAN, o backend `python-can` usa `CAN_BITRATE` ao abrir/configurar o adaptador. |
-| `HOST-05` | A CLI deve fornecer `ls`, `info`, `update`, `verify`, `run`, `reboot` e `set-node`. | Subcomandos implementados em `canloader/cli.py`. |
+| PROTO-01 | Usar PGN normalizado PDU1/PDU2 e transmitir com prioridade 6. | `boot_j1939.c`, `j1939.py` |
+| PROTO-02 | Mensagens até 8 bytes podem ser diretas. | Proprietary A/DM14/DM15/DM16 curto |
+| PROTO-03 | DM16 longo deve usar TP RTS/CTS dirigido. | receptor alvo + sender host |
+| PROTO-04 | Commanded Address deve usar BAM global. | payload de 9 bytes/two DT |
+| PROTO-05 | Limitar TP clássico a 1785 bytes. | encoder/decoder C e Python |
+| PROTO-06 | Conceder no máximo 8 pacotes por CTS. | `BOOT_J1939_TP_CTS_WINDOW` |
+| PROTO-07 | Expirar TP sem progresso em 1250 ms. | deadline renovável |
+| PROTO-08 | Separar ciclo de imagem em Proprietary A. | PGN `0xEF00` |
+| PROTO-09 | Usar DM14/15/16 sem inserir header de sessão em seus bytes. | key/seed `FFFF`; sessão no Proprietary A |
+| PROTO-10 | Rejeitar frame malformado, origem/destino/tamanho/estado incorretos. | validação antes de mutação |
 
-### 3.6 Requisitos de construção e qualidade
+### 3.5 Atualização e Flash
 
-| ID | Requisito | Atendimento e verificação |
+| ID | Requisito | Implementação/verificação |
 |---|---|---|
-| `BUILD-01` | Compilar o firmware para Cortex-M3/Thumb, ABI soft-float. | Flags `-mcpu=cortex-m3 -mthumb -mfloat-abi=soft`. |
-| `BUILD-02` | Usar C11/GNU11 e otimização para tamanho. | Bootloader: `-std=gnu11 -Os`; aplicação de teste: `-std=c11 -Os`. |
-| `BUILD-03` | Limitar o bootloader por linker a 15 KiB e impedir sobreposição da configuração/aplicação. | Região `FLASH` de 15 KiB e `ASSERT`s no linker. |
-| `BUILD-04` | Linkar toda aplicação atualizável a partir de `0x08004000` e terminar antes de `0x0800FC00`. | Linker de referência e validação do `APP_MAX_SIZE`. |
-| `BUILD-05` | Gerar ELF, BIN, HEX, MAP e listagem do bootloader. | Alvo `make bootloader`. |
-| `BUILD-06` | Permitir testes nativos da lógica sem MCU e testes Python sem barramento real. | `Tests/c` usa ports simulados; `Tests/python` usa barramento injetado. |
-| `BUILD-07` | Tratar builds/testes sem hardware como evidência lógica, não elétrica. | Campanha A–J separada em `VALIDATION.md`. |
+| UPD-01 | Aceitar imagem de 8 a 44032 bytes. | manifest e mapa v2 |
+| UPD-02 | Uma única sessão mutável por target. | owner SA + session 1..255 |
+| UPD-03 | Persistir `UPDATING` antes de apagar aplicação. | `boot_metadata_begin` |
+| UPD-04 | ERASE expressa page count de 1024 B. | DM14 ERASE/profile |
+| UPD-05 | WRITE é sequencial em blocos de 100 B; último menor. | `expected_write_length` |
+| UPD-06 | Não permitir lacuna, overlap nem endereço fora da aplicação. | pointer exato + região abstrata |
+| UPD-07 | Confirmar remontagem TP e depois resultado Flash separadamente. | EOM_ACK seguido de DM15 |
+| UPD-08 | Fechar operação repetindo pointer/length. | DM14 Operation Completed |
+| UPD-09 | Timeout global de 5000 ms sem atividade. | `service_update_timeout` |
+| UPD-10 | FINALIZE só marca VALID após CRC/vetores e readback. | estado VERIFY/metadata |
 
----
+### 3.6 Persistência e robustez
+
+| ID | Requisito | Implementação/verificação |
+|---|---|---|
+| PERS-01 | Config incompleta/corrompida não pode virar válida. | CRC, inverso e commit final |
+| PERS-02 | Reduzir erase em reendereçamentos sucessivos. | 32 slots append-only |
+| PERS-03 | Metadata parcial nunca autoriza jump. | markers independentes monotônicos |
+| PERS-04 | Erase/write devem ser verificados fisicamente. | readback F1 |
+| PERS-05 | Update não apaga journal nem código. | regiões disjuntas |
+| PERS-06 | Falha deve manter caminho de recuperação por CAN. | bootloader fora da região gravável |
+
+### 3.7 Host, qualidade e documentação
+
+| ID | Requisito | Implementação/verificação |
+|---|---|---|
+| HOST-01 | Python 3.10+ e `python-can`. | `pyproject.toml` |
+| HOST-02 | Suportar SLCAN/macOS e SocketCAN/Linux. | `bus.py` e argumentos CLI |
+| HOST-03 | Expor `ls/info/update/verify/run/reboot/set-address`. | `cli.py` |
+| HOST-04 | Correlacionar versão, SA/DA, comando e sessão. | decoders/client |
+| HOST-05 | Implementar retries idempotentes e TP.ABORT best-effort. | `client.py`, `transport.py` |
+| QUAL-01 | Compilar com warnings e testes C `-Werror`. | Makefiles |
+| QUAL-02 | Ter testes de wire format byte a byte em C e Python. | `Tests/c`, `Tests/python` |
+| QUAL-03 | Registrar limitações normativas e segurança. | documentação dedicada |
+| QUAL-04 | Não declarar hardware validado sem evidência. | plano de validação pendente |
+| QUAL-05 | Arquivar build, size/map, logs e captura CAN da versão liberada. | checklist e matriz HIL A–N |
 
 ## 4. Arquitetura de software
 
-### 4.1 Separação por camadas
+O núcleo é dividido em quatro níveis:
 
 ```text
-Core/Src/main.c
-        |
-        v
-Application/Src/bootloader.c  <---- máquina de estados e sessão
-     |             |
-     |             +---- boot_device_config / boot_metadata / boot_image
-     |                                      |
-     +--------------------+-----------------+
-                          v
-              Portable/Inc/*.h              Protocol/
-             CAN | Flash | Platform      frames | CRC32
-                          |
-                          v
-             Portable/stm32f1/Src/
-               HAL + bxCAN + FPEC
+Core/main (HAL init + scheduler cooperativo)
+                 |
+Application (FSM, metadata, imagem, configuração)
+                 |
+Protocol (J1939, claim, TP, DM/Proprietary A, CRC)
+                 |
+Portable interfaces -> port STM32F1
 ```
 
-| Diretório/módulo | Responsabilidade |
+### 4.1 Módulos embarcados
+
+| Arquivo/módulo | Responsabilidade |
 |---|---|
-| `Core/` | Startup, HAL, clock, GPIO, CAN e laço principal gerados/integrados com CubeMX. |
-| `Application/Src/bootloader.c` | Estado global, comandos, sessão, buffer de bloco, timeouts, ACK/NACK e transições. |
-| `Application/Src/boot_device_config.c` | Leitura, validação, fallback e persistência do node ID. |
-| `Application/Src/boot_metadata.c` | Cabeçalho persistente e markers monotônicos da atualização. |
-| `Application/Src/boot_image.c` | CRC da imagem, validação dos vetores e chamada do handoff. |
-| `Protocol/` | Enums estáveis, serialização LE, decodificação e CRC-32/ISO-HDLC. |
-| `Portable/Inc/` | Contratos independentes de MCU para CAN, Flash e plataforma. |
-| `Portable/stm32f1/Src/` | Implementações concretas usando STM32F1 HAL/CMSIS. |
-| `Tools/canloader/` | Serialização Python, retries, scanner, cliente de alto nível e CLI. |
-| `TestApplication/` | Aplicação relocada mínima e referência para `PROBE`/`ENTER_BOOTLOADER`. |
-| `Tests/` | Verificação nativa C e pytest da ferramenta host. |
+| `Application/Src/bootloader.c` | contexto, FSM, comandos, ownership, DM, timeout e fila TX |
+| `boot_device_config.c` | default NAME e journal NAME/SA |
+| `boot_metadata.c` | serialização e transições persistentes da imagem |
+| `boot_image.c` | CRC/vetores/validação/jump |
+| `boot_j1939.c` | ID de 29 bits e PGN |
+| `boot_j1939_address_claim.c` | gestão de endereço |
+| `boot_j1939_tp.c` | receptor RTS/CTS e BAM |
+| `boot_protocol.c` | payloads Proprietary A, DM14, DM15 e DM16 |
+| `boot_crc32.c` | CRC-32/ISO-HDLC incremental |
+| `boot_can_stm32f1.c` | filtro, RX/TX e estado bxCAN |
+| `boot_flash_stm32f1.c` | limites, erase, halfword e verify |
+| `boot_platform_stm32f1.c` | tick, UID, LED, request, reset e handoff |
 
-As camadas `Application` e `Protocol` não chamam diretamente `HAL_CAN_*` ou
-`HAL_FLASH_*`. Essa decisão permite testar as regras em um computador e portar
-o núcleo para outro MCU sem reescrever a máquina de estados.
+Os contratos `boot_can.h`, `boot_flash.h` e `boot_platform.h` impedem que a FSM
+dependa de tipos HAL. O diagrama detalhado está em
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
-### 4.2 Laço de execução
+### 4.2 Estruturas estáticas
 
-O bootloader é cooperativo e single-thread:
+Não existe `malloc`. O contexto contém:
+
+- fila circular TX de 8 frames;
+- orçamento RX de 8 frames por iteração;
+- buffer TP de 101 bytes para DM16 de 100 bytes;
+- buffer de bloco e padding de halfword;
+- buffer de 9 bytes para Commanded Address;
+- FSM de claim e FSM TP;
+- manifest/timestamps/owner/operação atual e anterior.
+
+O build integrado medido possui `bss=1648` bytes; heap é zero e o linker
+reserva 1024 bytes de stack.
+
+### 4.3 Inventário da mudança v2 no repositório
+
+| Área | O que foi alterado | Por que foi alterado |
+|---|---|---|
+| `Config/boot_config.h` | versão 2, SA/timers, bloco 100 e mapa 20 KiB | centralizar invariantes compiláveis do novo perfil |
+| `Config/boot_device_config_format.h` | journal de NAME/preferred SA | substituir identidade por node e tolerar registros rasgados |
+| `Portable/Inc/boot_can.h` | ID com 29 bits e tipo standard/extended explícito | impedir truncamento silencioso para 11 bits |
+| port bxCAN | TX extended e filtros PS local/global com IDE/RTR | receber somente o tráfego candidato ao perfil |
+| `boot_j1939.*` | encoder/decoder PDU1/PDU2 e PGNs | manter aritmética de ID fora da FSM |
+| `boot_j1939_address_claim.*` | NAME, Request, disputa, fallback e Cannot Claim | separar identidade de endereço operacional |
+| `boot_j1939_tp.*` | receiver RTS/CTS e BAM restrito | remontar payloads acima de 8 bytes com controle de fluxo |
+| `boot_protocol.*` | Proprietary A e codecs DM14/15/16 | separar mensagens do produto de transporte/rede |
+| `bootloader.c` | ownership por SA/session, operações DM, TP e fila TX | coordenar update dirigido e retries sem gravar bloco parcial |
+| metadata | grava protocol version 2 e continua com markers monotônicos | recusar imagem/registro de contrato incompatível |
+| linkers | código 19 KiB, config 1 KiB e app em `0x08005000` | acomodar a pilha v2 sem sobrepor persistência/aplicação |
+| TestApplication | claim, IDENTIFY/INFO/ENTER e Commanded Address | provar o contrato que a aplicação real deverá cumprir |
+| pacote Python | `j1939`, `address_claim`, `transport`, scanner e client v2 | operar SLCAN/SocketCAN e bloquear o target por NAME |
+| testes | vetores EFF/PGN, claim, TP, DM, journal e fluxo integrado | substituir evidência do protocolo antigo por evidência v2 |
+
+O código antigo não é compilado condicionalmente e não existe chave de
+compatibilidade. A rastreabilidade histórica permanece no controle de versão e
+em [MIGRATION_V1_TO_V2.md](MIGRATION_V1_TO_V2.md), não no binário.
+
+## 5. Configuração concreta do STM32F103
+
+### 5.1 Clock do bootloader
+
+- HSE = 8 MHz;
+- PLL ×9;
+- SYSCLK/HCLK = 72 MHz;
+- PCLK1 = 36 MHz;
+- Flash latency = 2;
+- SysTick/HAL tick = 1 ms.
+
+### 5.2 CAN do bootloader
 
 ```text
-HAL_Init()
-SystemClock_Config()
-MX_GPIO_Init()
-MX_CAN_Init()
-bootloader_init()
-
-while (1):
-    bootloader_task()
+bitrate = PCLK1 / (prescaler * (1 + BS1 + BS2))
+        = 36 MHz / (4 * (1 + 13 + 4))
+        = 500 kbit/s
+sample point = (1 + 13) / 18 = 77,78 %
+SJW = 1 TQ
 ```
 
-Não há RTOS, DMA de protocolo, interrupção de recepção CAN nem alocação
-dinâmica. A recepção é consultada na FIFO0. Cada chamada de `bootloader_task()`
-processa no máximo oito frames (`BOOT_RX_BUDGET_PER_TASK`) e interrompe o lote
-assim que uma resposta fica pendente, evitando sobrescrever a única fila de
-resposta.
+Modo normal, AutoBusOff e retransmissão automática ficam habilitados. PA11 é
+RX e PA12 TX; o transceptor externo converte níveis lógicos para diferencial.
 
-### 4.3 Contratos das interfaces portáveis
+A aplicação de referência retorna o clock a HSI 8 MHz e usa prescaler 1,
+BS1=13, BS2=2: `8 MHz/(1*16)=500 kbit/s` e sample point 87,5%.
 
-#### CAN
+### 5.3 Filtros bxCAN
 
-`boot_can_frame_t` transporta `id` de 32 bits, `dlc` e até 8 bytes. O núcleo
-depende dos seguintes contratos:
+O port do bootloader configura dois bancos mask de 32 bits:
 
-| Função | Contrato |
-|---|---|
-| `boot_can_init(node)` | valida/configura filtro para o node; ainda não inicia atendimento |
-| `boot_can_start()` | coloca o periférico em operação |
-| `boot_can_stop()` | para e desinicializa de forma segura para handoff |
-| `boot_can_send(frame)` | não bloqueia indefinidamente; retorna `OK`, `BUSY`, `BUS_OFF` ou `ERROR` |
-| `boot_can_receive(frame)` | polling; retorna `OK`, `EMPTY`, `BUS_OFF` ou `ERROR` |
-| `boot_can_get_state()` | informa `OK`, `BUS_OFF` ou erro; disponível, mas não usado pela máquina atual |
-| `boot_can_tx_idle()` | verdadeiro somente quando nenhuma transmissão continua pendente |
+- destino no byte PS igual ao SA local;
+- destino global `0xFF`.
 
-O núcleo mantém a resposta quando `send` não retorna `OK`; por isso um port deve
-usar `BUSY` como estado transitório e nunca reportar sucesso antes de entregar o
-frame ao periférico.
+A máscara inclui IDE e RTR, portanto aceita apenas extended data frames. Como o
+mesmo byte PS representa DA nos PGNs PDU1 e Group Extension em PDU2, o filtro é
+intencionalmente amplo; a camada J1939 faz a validação semântica de PGN/DA.
+Quando o claim muda o SA, o bootloader primeiro limpa sua fila software, chama
+`boot_can_abort_pending_tx()` para abortar os três mailboxes bxCAN e só então
+reconfigura o filtro local. Se o abort/reconfigure falhar, entra em ERROR. A
+ordem impede que um frame já preparado continue no barramento com o SA que o
+target acabou de perder.
 
-#### Flash
+A aplicação de teste aceita todos os extended data frames em um banco e filtra
+em software, simplificando seu driver sem HAL. Ao trocar de SA, ela limpa a
+fila e solicita `ABRQ0` no único mailbox que utiliza.
 
-As regiões abstratas são `APPLICATION`, `METADATA` e `DEVICE_CONFIG`. Os status
-possíveis são `OK`, `INVALID_ARGUMENT`, `ALIGNMENT`, `RANGE`, `ERASE`,
-`PROGRAM`, `VERIFY` e `HARDWARE`.
+### 5.4 Integração elétrica e gravação inicial
 
-| Função | Contrato |
-|---|---|
-| `boot_flash_init()` | valida geometria/capacidade e prepara o port |
-| `boot_flash_is_valid_range()` | não altera estado; rejeita overflow e saída da região |
-| `boot_flash_erase()` | recebe offset relativo e páginas inteiras; deve conferir o erase |
-| `boot_flash_write()` | recebe offset relativo, dados alinhados e comprimento múltiplo da unidade; deve conferir a programação |
-| `boot_flash_read()` | copia bytes da região sem permitir leitura fora do limite |
+PA11/PA12 são sinais lógicos de CAN e **não** podem ser ligados diretamente a
+CAN_H/CAN_L. A placa precisa de um transceptor compatível com os níveis do MCU,
+alimentação e modo de standby corretamente definidos. CAN_H, CAN_L e uma
+referência de GND devem acompanhar toda a bancada. A topologia linear recebe
+120 Ω em cada extremidade física; com a rede desligada, duas terminações em
+paralelo medem aproximadamente 60 Ω entre CAN_H e CAN_L. Stubs longos,
+terminações adicionais e ausência de terra de referência devem ser tratados como
+falha de montagem, não de protocolo.
 
-O núcleo pressupõe que `OK` em erase/write inclui readback bem-sucedido. Um novo
-port não deve retornar `OK` apenas porque o comando foi aceito pelo controlador
-de Flash.
+O bootloader não faz self-update. Sua primeira instalação, assim como a migração
+de uma imagem antiga, exige SWD/ST-LINK em `0x08000000`, com BOOT0 configurado
+para iniciar pela Flash principal. Para a migração v2 é recomendado apagar toda
+a Flash antes de gravar o bootloader, pois nem a aplicação relocada nem o formato
+persistente antigo são compatíveis. Depois dessa instalação, somente a partição
+da aplicação é atualizada pelo CAN.
 
-#### Plataforma
+## 6. Mapa de memória e orçamento
 
-| Função | Contrato |
-|---|---|
-| `boot_platform_millis()` | contador monotônico módulo `2^32`, usado por subtração sem sinal |
-| `boot_platform_led_set(on)` | indicação lógica independente da polaridade física |
-| `boot_platform_uid_word(i)` | words 0..2 do identificador físico; índice inválido retorna zero no port F1 |
-| `boot_platform_take_boot_request()` | testa e consome atomicamente no nível lógico o pedido one-shot |
-| `boot_platform_set_boot_request()` | persiste pedido através do próximo reset de sistema |
-| `boot_platform_prepare_handoff()` | neutraliza clocks/tick/IRQs que não podem vazar para a aplicação |
-| `boot_platform_jump(vector, msp, reset)` | não retorna; instala contexto da aplicação e salta |
-| `boot_platform_reset()` | solicita reset e não retorna |
+| Região | Intervalo | Tamanho |
+|---|---:|---:|
+| bootloader code | `0x08000000..0x08004BFF` | 19 KiB |
+| device config | `0x08004C00..0x08004FFF` | 1 KiB |
+| aplicação | `0x08005000..0x0800FBFF` | 43 KiB / `0xAC00` |
+| metadata | `0x0800FC00..0x0800FFFF` | 1 KiB |
+| SRAM | `0x20000000..0x20004FFF` | 20 KiB |
 
-“Atomicamente no nível lógico” significa que o consumidor só aceita o par
-completo de magias; as duas escritas físicas BKP são sequenciais, e estados
-intermediários não são interpretados como pedido válido.
+### 6.1 Justificativa histórica e medição atual
 
----
-
-## 5. Configuração concreta do STM32F103C8Tx
-
-### 5.1 Clock
-
-O bootloader usa:
-
-| Sinal | Valor |
-|---|---:|
-| HSE | 8 MHz |
-| PLL | HSE × 9 |
-| SYSCLK | 72 MHz |
-| HCLK/AHB | 72 MHz |
-| PCLK1/APB1 | 36 MHz |
-| PCLK2/APB2 | 72 MHz |
-| latência de Flash | 2 wait states |
-
-Essa configuração é requisito para o timing CAN fixado no firmware. HSE ausente
-ou que não atinja o estado ready leva ao `Error_Handler()` e não chega à máquina
-do bootloader. Um oscilador que inicia, mas possui frequência diferente de
-8 MHz, não é detectado: SYSCLK e bitrate ficam incorretos.
-
-### 5.2 Timing CAN
-
-O bxCAN usa modo normal com:
-
-| Parâmetro | Valor |
-|---|---:|
-| clock do periférico | 36 MHz |
-| prescaler | 4 |
-| Sync Segment | 1 TQ |
-| BS1 | 13 TQ |
-| BS2 | 4 TQ |
-| SJW | 1 TQ |
-| total | 18 TQ/bit |
-| bitrate | `36 MHz / (4 × 18) = 500 kbit/s` |
-| sample point | `(1 + 13) / 18 ≈ 77,8%` |
-
-O firmware habilita retransmissão automática e recuperação automática de
-bus-off (`AutoBusOff`). Não há negociação nem autodetecção de bitrate.
-
-O port detecta bus-off ao enviar/receber, mas a máquina de estados não chama
-`boot_can_get_state()` nem reinicializa explicitamente o periférico. Se houver
-uma resposta pendente durante bus-off, ela pode impedir novas recepções até a
-recuperação automática do bxCAN. Esse comportamento precisa ser caracterizado
-sob falha real de barramento.
-
-### 5.3 Filtro CAN
-
-O banco 0 é configurado em modo lista, escala de 16 bits, FIFO0. Os quatro
-slots recebem:
-
-1. `0x600 + node`: comando unicast;
-2. `0x700 + node`: dados da aplicação;
-3. `0x500`: broadcast;
-4. repetição de `0x600 + node` para completar a lista.
-
-O software também reconfirma o ID depois da retirada da FIFO. Apenas data frames
-com identificador padrão são aceitos. Frames RTR, extended ou com DLC incompatível
-são rejeitados.
-
-### 5.4 LED PC13
-
-| Estado | Indicação |
-|---|---|
-| `BOOT_WINDOW` | aceso continuamente durante a janela |
-| `WAIT_HOST` | alterna a cada 500 ms |
-| `PREPARE_UPDATE`, `ERASE`, `RECEIVE`, `VERIFY` | alterna a cada 125 ms |
-| `READY`, `RUN_APPLICATION`, `RESET` | apagado |
-| `INIT` ou `ERROR` | alterna a cada 100 ms |
-
-O LED é auxiliar de diagnóstico; nenhuma decisão de integridade depende dele.
-
----
-
-## 6. Mapa de memória
-
-### 6.1 Flash e SRAM
-
-Todos os fins inclusivos abaixo pertencem à região indicada.
-
-| Região | Início | Fim inclusivo | Tamanho |
-|---|---:|---:|---:|
-| código do bootloader | `0x08000000` | `0x08003BFF` | `0x3C00` = 15 KiB |
-| configuração do dispositivo | `0x08003C00` | `0x08003FFF` | `0x400` = 1 KiB |
-| aplicação | `0x08004000` | `0x0800FBFF` | `0xBC00` = 47 KiB = 48128 bytes |
-| metadata | `0x0800FC00` | `0x0800FFFF` | `0x400` = 1 KiB |
-| SRAM | `0x20000000` | `0x20004FFF` | `0x5000` = 20 KiB |
+O primeiro link integrado do v2 não cabia nos 15 KiB de código anteriores e
+reportou excesso de 516 bytes. O mapa passou a reservar 20 KiB totais ao
+bootloader, dos quais 19 KiB para código e 1 KiB para configuração. A medição
+do artefato final auditado é:
 
 ```text
-0x08000000  +----------------------------------+
-            | bootloader: código e constantes  | 15 KiB
-0x08003C00  +----------------------------------+
-            | device config / node ID          | 1 KiB
-0x08004000  +----------------------------------+
-            | aplicação relocada + vetores     | 47 KiB
-0x0800FC00  +----------------------------------+
-            | metadata da imagem               | 1 KiB
-0x08010000  +----------------------------------+
+text=16456, data=12, bss=1648
+ocupação Flash text+data=16468
+capacidade code=19456
+margem=2988 bytes (aprox. 15,4 %)
 ```
 
-O linker do bootloader expõe somente os 15 KiB iniciais como região executável
-`FLASH`. A página `DEVICE_CONFIG` é declarada separadamente e não recebe seções
-do ELF. As asserções confirmam que o limite da região de código é `0x08003C00`,
-rejeitando qualquer overflow, e que a partição completa do bootloader termina
-exatamente em `0x08004000`.
+É uma fotografia do build, não promessa futura. Cada release precisa repetir
+`size`, conferir `.map` e as asserts do linker. Detalhes completos estão em
+[MEMORY_MAP.md](MEMORY_MAP.md).
 
-Na SRAM, o linker reserva no mínimo 1 KiB para stack e zero bytes para heap. O
-contexto da máquina, a resposta pendente e o buffer do bloco são estáticos. A
-aplicação de referência também reserva 1 KiB de stack em seu linker.
+A aplicação de referência do mesmo build mede `text=7316`, `data=4` e
+`bss=1296`: 7320 bytes carregáveis na partição de 44032 bytes e 1300 bytes de
+RAM estática contabilizada, incluindo sua reserva de stack.
 
-### 6.2 Regiões acessíveis pelo port de Flash
+## 7. Configuração persistente NAME/SA
 
-A API abstrata conhece apenas:
+### 7.1 Default de desenvolvimento
 
-- `BOOT_FLASH_REGION_APPLICATION`;
-- `BOOT_FLASH_REGION_METADATA`;
-- `BOOT_FLASH_REGION_DEVICE_CONFIG`.
-
-Cada operação recebe região, offset relativo e comprimento. Antes de calcular o
-endereço físico, o port verifica:
-
-- região conhecida;
-- offset dentro do tamanho;
-- ausência de overflow em `offset + length`;
-- comprimento não nulo quando exigido;
-- alinhamento de página para erase;
-- alinhamento de 2 bytes para programação.
-
-Na programação, um halfword já igual ao valor solicitado é tratado como
-idempotente; um halfword diferente de `0xFFFF` e também diferente do desejado é
-rejeitado, pois a Flash não pode realizar transição de zero para um sem erase.
-
-Não existe uma região correspondente ao código do bootloader na API gravável.
-Assim, um comando de update não pode escolher a página de configuração,
-metadata ou bootloader como destino de dados da aplicação.
-
-### 6.3 Requisito para o binário da aplicação
-
-O arquivo enviado é um `.bin` bruto, sem cabeçalho do CanLoader. Ele deve:
-
-1. ter sido linkado com a tabela de vetores em `0x08004000`;
-2. conter pelo menos 8 bytes;
-3. ter no máximo 48128 bytes;
-4. iniciar com MSP e Reset Handler válidos para o STM32F103C8Tx;
-5. configurar `SCB->VTOR` para `0x08004000` durante seu startup, mesmo que o
-   bootloader já o faça no handoff;
-6. usar apenas a faixa `0x08004000..0x0800FBFF` para código/dados persistentes;
-7. usar o mesmo bitrate e a mesma pinagem se implementar o controle CAN exigido.
-
-O linker de referência está em
-[`TestApplication/linker.ld`](../TestApplication/linker.ld).
-
----
-
-## 7. Configuração persistente do dispositivo
-
-### 7.1 Formato
-
-Os 12 primeiros bytes da página `0x08003C00` possuem o seguinte registro LE:
-
-| Offset | Tamanho | Campo | Regra |
-|---:|---:|---|---|
-| `0..3` | 4 | `magic` | `0x46434C43`; bytes `43 4C 43 46`, texto `CLCF` na memória |
-| `4..5` | 2 | `format_version` | `1` |
-| `6` | 1 | `node_id` | `1..127` |
-| `7` | 1 | `node_id_inv` | complemento bit a bit do node |
-| `8..11` | 4 | `crc32` | CRC-32/ISO-HDLC dos bytes `0..7` |
-
-O restante da página fica reservado. Na leitura, qualquer falha de magic,
-versão, intervalo, complemento ou CRC faz o bootloader usar node 1.
-
-### 7.2 Alteração do node
-
-`SET_NODE_ID` somente é aceito por unicast nos estados `BOOT_WINDOW`,
-`WAIT_HOST` ou `READY`.
+O firmware lê as três words UID do STM32, serializa 12 bytes little-endian e
+calcula CRC-32. O Identity Number é:
 
 ```text
-host no node antigo
-    |
-    | SET_NODE_ID(novo)
-    v
-validar 1..127
-    |
-apagar somente 0x08003C00..0x08003FFF
-    |
-gravar registro + reler + conferir
-    |
-marcar pedido de boot em BKP
-    |
-ACK no ID do node antigo
-    |
-aguardar >=50 ms e TX ocioso, ou limite de 250 ms
-    |
-reset -> carregar node novo -> filtro novo
+identity = CRC32(uid96) & 0x001FFFFF
+identity = 1, se o resultado for zero
 ```
 
-Se o novo valor já for o atual, o comando retorna ACK sem apagar a página e sem
-reset. Uma perda de energia durante reconfiguração pode corromper o registro; o
-fallback será node 1, sem afetar código, aplicação ou metadata.
+O NAME combina identity com Manufacturer Code, ECU/Function instances,
+Function, Vehicle System, Industry Group todos zero e `AAC=1`. Preferred SA é
+`0x80`.
 
-Atualizações normais da aplicação não apagam esta página. Um mass erase por SWD
-apaga e restaura o comportamento default.
+Manufacturer Code zero não é válido como identidade de produção atribuída; o
+default só serve para bancada. O campo flag `NAME_PROVISIONED` existe no formato
+persistente, embora o fluxo remoto desta revisão só altere o endereço.
 
----
+A derivação é determinística, mas não garante unicidade global: 96 bits do UID
+são comprimidos para os 21 bits de Identity Number. Portanto, colisão continua
+matematicamente possível e deve ser verificada por inventário. Um produto deve
+usar Manufacturer Code atribuído e Identity Number controlado pelo fabricante,
+e persistir esse NAME antes da liberação.
 
-## 8. Metadata da imagem e transação persistente
+### 7.2 Journal v2
 
-### 8.1 Layout
+A página guarda 32 slots de 32 bytes:
 
-A última página da Flash começa com 30 bytes significativos:
-
-| Offset | Tamanho | Campo | Valor/regra |
-|---:|---:|---|---|
-| `0..3` | 4 | `magic` | `0x444D4C43`; `CLMD` na memória |
-| `4..5` | 2 | `format_version` | `1` |
-| `6..7` | 2 | `protocol_version` | `1` |
-| `8..11` | 4 | `image_size` | `8..0xBC00` |
-| `12..15` | 4 | `image_crc32` | CRC dos bytes reais da imagem |
-| `16..19` | 4 | `image_version` | `0` na versão atual |
-| `20..23` | 4 | `header_crc32` | CRC dos bytes `0..19` |
-| `24..25` | 2 | marker `update` | `00 00` quando comprometido |
-| `26..27` | 2 | marker `valid` | `00 00` quando comprometido |
-| `28..29` | 2 | marker `invalid` | `00 00` quando comprometido |
-| `30..1023` | 994 | reservado | permanece apagado (`0xFF`) |
-
-Cada marker ocupa um halfword independente. Isso permite transições monotônicas
-de `1` para `0` sem reapagar a página no meio da atualização.
-
-### 8.2 Interpretação de estado
-
-| Estado lógico | update | valid | invalid | Executável? |
-|---|---|---|---|---|
-| vazio/ilegível | `FF FF` ou cabeçalho inválido | qualquer | qualquer | não |
-| `UPDATING` | `00 00` | `FF FF` | `FF FF` | não |
-| `VALID` | `00 00` | `00 00` | `FF FF` | somente após revalidar imagem |
-| `INVALID` | `00 00` | qualquer | `00 00` | não |
-
-O marker `invalid` tem precedência. Combinações rasgadas, desconhecidas ou com
-CRC de cabeçalho incorreto tornam a metadata ilegível e falham de modo seguro.
-
-### 8.3 Ordem resistente a interrupção
-
-O começo de uma atualização segue obrigatoriamente:
-
-1. mudar para `ERASE` e marcar `app_valid=false` no contexto volátil;
-2. apagar a página de metadata;
-3. gravar cabeçalho com tamanho/CRC esperado e marker `update`;
-4. reler e confirmar estado `UPDATING`;
-5. apagar somente as páginas cobertas pela nova imagem;
-6. receber e programar todos os blocos;
-7. recalcular o CRC total e validar vetores;
-8. programar marker `valid`;
-9. reler metadata e revalidar a imagem completa.
-
-Se houver reset entre a mudança volátil de `app_valid` e a primeira alteração
-persistente da metadata, a metadata/imagem anterior ainda pode permanecer
-`VALID` e iniciar normalmente. Depois que a alteração persistente começa e
-antes do marker `valid` novo, o próximo boot encontra metadata vazia,
-incompleta, `UPDATING` ou `INVALID`, e permanece em `WAIT_HOST`. Se a interrupção
-ocorrer depois de programar `valid`, a inicialização ainda recalcula CRC e
-vetores antes de permitir execução. Em nenhum caso uma imagem parcial passa
-pela decisão de boot.
-
-O layout é **single-slot**: após o erase, a imagem anterior não existe mais.
-Existe recuperação por nova atualização, mas não rollback automático.
-
----
-
-## 9. Inicialização e decisão de boot
-
-`bootloader_init()` executa a seguinte sequência:
-
-1. zera o contexto estático;
-2. inicia LED e timestamps;
-3. inicializa o port de Flash e verifica capacidade física;
-4. carrega e valida o node ID persistente;
-5. consulta e consome uma solicitação one-shot da aplicação nos registradores
-   de backup;
-6. configura filtro e inicia CAN para o node carregado;
-7. lê metadata e valida completamente a imagem;
-8. entra em `BOOT_WINDOW` se a imagem for válida ou `WAIT_HOST` se inválida.
-
-Falha na inicialização de Flash ou CAN leva a `ERROR`. Nesse estado o laço apenas
-mantém a indicação rápida de erro; não existe tentativa automática de
-reinicializar o periférico.
-
-### 9.1 Janela normal
-
-Com imagem válida e sem pedido da aplicação, `BOOT_WINDOW` dura 1500 ms. Se
-nenhum pedido aceito capturar o bootloader, o CAN é parado e a imagem é
-revalidada imediatamente antes do jump.
-
-Durante a janela:
-
-- `PROBE` responde, mas **não captura** o bootloader;
-- frame malformado, versão incorreta, comando desconhecido/NACK ou comando
-  mutável broadcast não capturam;
-- um comando válido que produza ACK, exceto `PROBE`, retém ou muda o estado;
-- `START_UPDATE`, `RUN_APPLICATION`, `ABORT`, `ENTER_BOOTLOADER` e
-  `SET_NODE_ID` aplicam suas transições próprias.
-
-### 9.2 Janela solicitada pela aplicação
-
-A aplicação escreve o seguinte par de valores antes do reset:
-
-| Registro | Valor |
-|---|---:|
-| `BKP->DR1` | `0xB007` |
-| `BKP->DR2` | `0x4C44` |
-
-Depois executa `NVIC_SystemReset()`. Na próxima inicialização, o bootloader
-habilita acesso ao domínio backup, exige as duas magias, limpa os dois
-registradores e usa 10000 ms em vez de 1500 ms. A marca é one-shot: outro reset
-sem nova solicitação volta à janela normal.
-
-Se a aplicação for inválida, a duração não importa, pois o destino já é
-`WAIT_HOST` indefinido.
-
----
-
-## 10. Máquina de estados
-
-```text
-[reset do MCU] -> INIT -- falha de Flash/filtro/start --> ERROR
-                    |
-                    +-- imagem inválida ----------------> WAIT_HOST
-                    |
-                    +-- imagem válida ------------------> BOOT_WINDOW
-                                                            |
-                       +------------------------------------+----------------+
-                       | expiração                          | START_UPDATE   |
-                       v                                    v                |
-                boot_image_jump()                    PREPARE_UPDATE <-------+
-                                                            |
-                                                   SET_CRC + ERASE
-                                                            v
-                                                          ERASE
-                                                            |
-                                                            v
-                                                         RECEIVE
-                                                            |
-                                                         FINISH
-                                                            v
-                                                          VERIFY
-                                                            |
-                                                            v
-                                                          READY
-
-BOOT_WINDOW -- consulta/ENTER/ABORT aceito -------------> WAIT_HOST
-WAIT_HOST ou READY -- START_UPDATE ---------------------> PREPARE_UPDATE
-WAIT_HOST/READY/BOOT_WINDOW -- RUN válido --------------> RUN_APPLICATION -> jump
-BOOT_WINDOW/WAIT_HOST/READY -- SET_NODE_ID novo válido -> RESET -> reset do MCU
-BOOT_WINDOW/WAIT_HOST/READY -- SET_NODE_ID igual -------> mesmo estado, após ACK
-PREPARE_UPDATE/RECEIVE -- ABORT/timeout/falha ----------> WAIT_HOST
-```
-
-### 10.1 Estados e invariantes
-
-| Estado | Invariante e operações principais |
-|---|---|
-| `INIT` | contexto sendo preparado; nenhuma operação host deve depender dele |
-| `BOOT_WINDOW` | imagem válida; timer de 1,5 s ou 10 s ativo |
-| `WAIT_HOST` | estado recuperável, sem expiração automática |
-| `PREPARE_UPDATE` | sessão/tamanho aceitos; CRC ainda precisa ser confirmado antes do erase |
-| `ERASE` | metadata e aplicação estão sendo alteradas de forma síncrona |
-| `RECEIVE` | metadata não executável; exatamente um bloco pode estar ativo |
-| `VERIFY` | CRC/vetores/marker estão sendo processados de forma síncrona |
-| `READY` | imagem nova validada; aceita verificação, execução ou novo update |
-| `RUN_APPLICATION` | ACK enfileirado; aguarda drenagem ou limite absoluto |
-| `RESET` | ACK de reendereçamento enfileirado; aguarda drenagem ou limite absoluto |
-| `ERROR` | inicialização falhou; não processa protocolo |
-
-`ERASE` e `VERIFY` existem para tornar explícito o estado lógico, mas as rotinas
-de Flash e CRC são síncronas dentro da chamada que processa o frame.
-
-Se `ENTER_BOOTLOADER` chegar quando o próprio bootloader já está ativo, ele
-responde ACK e muda para `WAIT_HOST` sem executar outro reset. O comportamento é
-idempotente e cancela a expiração da boot window. O handler não restringe o
-estado: ele também pode interromper `PREPARE_UPDATE`, `RECEIVE`,
-`RUN_APPLICATION` ou `RESET`. Nesse caso não chama `clear_transfer()` nem marca
-metadata `INVALID`; uma metadata que já estava `UPDATING` continua não
-executável, e o contexto volátil permanece até ABORT, timeout ou novo update.
-
-### 10.2 Contexto interno e fila de resposta
-
-Existe uma única instância estática de contexto. Seus grupos de dados são:
-
-| Grupo | Campos/conceito |
-|---|---|
-| ciclo de vida | estado atual, início do estado, última atividade e timestamp do LED |
-| imagem | tamanho esperado, CRC esperado e bytes comprometidos |
-| sessão | byte de sessão ativo e flag de CRC recebido |
-| bloco | próximo/último índice, sequência, comprimento, próximo frame e bytes no buffer |
-| estado derivado | node, validade da aplicação, pedido de boot e flags de bloco/duplicata |
-| saída | exatamente um `pending_response` e sua flag |
-| armazenamento temporário | buffer de 101 bytes para bloco de 100 bytes mais alinhamento |
-
-`flush_response()` tenta enviar a resposta pendente antes de retirar novos
-frames. Se o mailbox estiver ocupado, ela permanece pendente; `queue_response()`
-não substitui uma resposta já existente. O laço somente volta a receber quando
-a pendência é liberada, exceto quando a rotina de timeout remove explicitamente
-uma resposta antiga para publicar o NACK assíncrono de timeout.
-
-Essa organização evita várias respostas simultâneas e mantém o consumo de RAM
-determinístico, mas também significa que congestionamento/bus-off pode exercer
-backpressure sobre todo o parser.
-
----
-
-## 11. Protocolo CAN v1
-
-### 11.1 Perfil
-
-| Propriedade | Valor |
-|---|---|
-| enlace | CAN clássico 2.0, data frames |
-| identificador | padrão de 11 bits |
-| bitrate F1 | 500 kbit/s |
-| payload máximo | 8 bytes |
-| byte order | little-endian |
-| versão | 1 |
-| sessão | 1 byte; update exige 1..255 |
-| bloco máximo | 100 bytes no target atual |
-| dados por frame | 1..5 bytes |
-
-### 11.2 Identificadores
-
-| Direção | Fórmula | Exemplo node 1 | Função |
-|---|---:|---:|---|
-| host → todos | `0x500` | `0x500` | controle broadcast permitido |
-| dispositivo → host | `0x580 + node` | `0x581` | ACK/NACK |
-| host → dispositivo | `0x600 + node` | `0x601` | comandos de controle |
-| host → dispositivo | `0x700 + node` | `0x701` | frames DATA |
-
-Os IDs máximos continuam dentro de `0x7FF` para todo node válido. Operações que
-mudam estado não são executadas quando chegam em `0x500`; somente `DISCOVER`,
-`INFO` e `PROBE` são permitidos por broadcast no bootloader.
-
-Pela arbitragem CAN, o broadcast `0x500` possui prioridade maior que respostas,
-comandos e DATA. Entre respostas simultâneas, o menor node usa o menor ID e
-vence primeiro. Com nodes exclusivos, os controladores que perdem a arbitragem
-retransmitem depois sem corromper a mensagem; o problema crítico ocorre quando
-dois dispositivos usam o mesmo ID e tentam transmitir payloads divergentes.
-
-### 11.3 Pedido de controle
-
-ID unicast de comando ou broadcast, DLC exatamente 8:
-
-| Byte | Campo |
+| Offset | Campo |
 |---:|---|
-| 0 | `version = 0x01` |
-| 1 | `command` |
-| 2 | `session` |
-| 3 | `parameter` |
-| 4..7 | `value`, `uint32_t` little-endian |
+| 0 | magic `0x46434C43` (`CLCF`) |
+| 4 | format version 2 |
+| 6 | record size 32 |
+| 8 | generation uint32 |
+| 12 | NAME uint64 LE |
+| 20 | preferred SA |
+| 21 | complemento do SA |
+| 22 | flags uint16 |
+| 24 | CRC32 dos bytes 0..23 |
+| 28 | commit `0000`, programado por último |
+| 30 | reservado `FFFF` |
 
-Campos reservados devem ser zero. Versão diferente gera
-`UNSUPPORTED_VERSION`; ID/DLC/layout incorreto gera `MALFORMED_FRAME` quando o
-frame chega ao decoder.
+O scanner percorre todos os slots, ignora registros inválidos/rasgados e escolhe
+a geração modular mais nova. Se a página enche, ela é apagada e o próximo
+registro vai ao slot zero. Após gravar, o código relê e compara generation,
+NAME, SA e flags.
 
-Para interoperabilidade, todo host e toda aplicação compatível devem usar
-sessões `1..255`. O bootloader exige valor não zero formalmente ao iniciar um
-update, mas aceita zero em algumas consultas stateless; o encoder Python exige
-sessão não zero em todo pedido e a aplicação de referência ignora sessão zero.
+Commanded Address persiste primeiro; somente após sucesso o target carrega o
+registro, reconfigura CAN e reinicia claim. Uma queda durante compactação pode
+eliminar o journal inteiro e provocar fallback aos defaults, limitação de página
+única documentada.
 
-### 11.4 BEGIN_BLOCK
+## 8. Metadata transacional da imagem
 
-`BEGIN_BLOCK` usa o ID de comando e DLC 8:
+O registro de 30 bytes contém:
 
-| Byte | Campo | Regra |
+| Offset | Campo |
+|---:|---|
+| 0 | magic `0x444D4C43` (`CLMD`) |
+| 4 | format version 1 |
+| 6 | protocol version 2 |
+| 8 | image size |
+| 12 | image CRC32 |
+| 16 | image version, atualmente 0 |
+| 20 | CRC32 dos bytes 0..19 |
+| 24 | marker update |
+| 26 | marker valid |
+| 28 | marker invalid |
+
+Markers apagados são `FFFF`; programados são `0000`. A interpretação é:
+
+```text
+update=0000, valid=FFFF, invalid=FFFF -> UPDATING
+update=0000, valid=0000, invalid=FFFF -> VALID
+invalid=0000                         -> INVALID
+qualquer cabeçalho/combinação inválida -> não executável
+```
+
+`boot_metadata_begin()` apaga a página, grava manifest + marker update e relê
+antes de a aplicação ser apagada. `mark_valid()` só programa bits de 1 para 0
+após CRC/vetores. `mark_invalid()` tem precedência e também é monotônico.
+
+### 8.1 Raciocínio de segurança contra queda de energia
+
+Flash NOR permite programar bits de 1 para 0 sem erase. Por isso os markers
+mudam monotonicamente e o estado executável não depende de reescrever um enum:
+
+| Momento da queda | Estado esperado no próximo boot |
+|---|---|
+| durante erase/gravação do cabeçalho | magic/CRC/marker inválido; não executa |
+| depois de `UPDATING`, antes do erase da app | app pode existir fisicamente, mas não executa |
+| durante erase ou qualquer WRITE | `UPDATING`; não executa |
+| depois de todos os blocos, antes de FINALIZE | `UPDATING`; não executa |
+| durante CRC/vetores ou programação de VALID | sem marker VALID completo; não executa |
+| depois de VALID completo | boot relê cabeçalho, CRC, MSP e handler antes do jump |
+
+Essa ordem privilegia integridade em vez de disponibilidade: o início de uma
+atualização revoga imediatamente a autorização da imagem anterior, ainda que
+seus bytes não tenham sido apagados. Como existe um único slot, a recuperação é
+um novo update completo.
+
+## 9. Identificador J1939 e PGNs
+
+O ID contém prioridade, R, DP, PF, PS e SA. Para PDU1 (`PF<0xF0`), PS é DA e
+não integra o PGN; para PDU2, PS é Group Extension. O encoder exige R=0,
+PGN canônico de até `0x1FFFF` e transmite com prioridade 6. O decoder expõe a
+prioridade recebida, mas o dispatcher atual não rejeita um PGN conhecido apenas
+por ter prioridade diferente; a interoperabilidade deve usar 6, e uma política
+RX mais restritiva pode ser acrescentada se o produto exigir.
+
+| PGN | Nome | Uso |
 |---:|---|---|
-| 0 | versão | `1` |
-| 1 | comando | `0x20` |
-| 2 | sessão | sessão ativa |
-| 3 | `block_sequence` | `block_index & 0xFF` |
-| 4..5 | `block_index` | 16 bits LE |
-| 6 | `block_length` | `1..100`, exatamente o tamanho esperado |
-| 7 | reservado | zero |
+| `0xD700` | DM16 | dados de WRITE |
+| `0xD800` | DM15 | resposta de memória |
+| `0xD900` | DM14 | pedido de memória |
+| `0xEA00` | Request | solicitar Address Claimed |
+| `0xEB00` | TP.DT | pacotes de dados |
+| `0xEC00` | TP.CM | RTS/CTS/EOM/BAM/ABORT |
+| `0xEE00` | Address Claimed | NAME↔SA / Cannot Claim |
+| `0xEF00` | Proprietary A | controle CanLoader |
+| `0xFED8` | Commanded Address | alterar preferred SA |
 
-O endereço é implícito: blocos válidos são cumulativos e o próximo offset é
-`bytes_committed`. O host não pode saltar nem retroceder para um endereço livre.
+Com Tool `0xF9` e target `0x80`, DM14 usa `0x18D980F9` e resposta DM15
+`0x18D8F980`. Todos os exemplos e layouts estão em PROTOCOL.md.
 
-### 11.5 DATA
+## 10. NAME, Address Claim e descoberta
 
-ID `0x700 + node`, DLC 4..8:
+### 10.1 Identidade, rota e tipo de target
 
-| Byte | Campo | Regra |
-|---:|---|---|
-| 0 | sessão | mesma sessão do update |
-| 1 | sequência do bloco | mesma de `BEGIN_BLOCK` |
-| 2 | sequência do frame | inicia em zero |
-| 3..DLC-1 | payload | 1..5 bytes |
+O v2 evita tratar um único byte como se fosse identidade permanente. Os campos
+têm papéis distintos:
 
-DATA não transporta versão nem byte de comando; o tipo é implícito pelo ID.
-Uma resposta ao commit usa `command=0x21`.
+| Campo | Persistência | Função | É autenticação? |
+|---|---|---|---|
+| UID96 STM32 | silício do MCU | inventário físico e origem do default NAME | não |
+| NAME64 | journal/default determinístico | identidade usada em claim e seleção | não |
+| preferred SA | journal | primeira rota tentada após reset | não |
+| current SA | RAM/claim | endereço efetivo usado nos IDs PDU1 | não |
+| target code `0xF1` | constante de build | identifica a família STM32F1 nas capabilities | não |
+| session | RAM, 1 byte | correlaciona um update até reset/abort/timeout | não |
 
-### 11.6 Resposta
+O identificador recomendado ao operador é o NAME. O SA é necessário para
+rotear o frame atual; o UID é informação adicional apresentada por `info`. O
+host confere NAME↔SA antes e durante a operação, mas nenhuma dessas conferências
+constitui prova criptográfica.
 
-ID `0x580 + node`, DLC exatamente 8:
+### 10.2 FSM de Address Claim
 
-| Byte | Campo |
-|---:|---|
-| 0 | `version = 0x01` |
-| 1 | `kind`: ACK `0x80` ou NACK `0x81` |
-| 2 | comando relacionado |
-| 3 | sessão ecoada |
-| 4..7 | resultado ou erro, `uint32_t` LE |
-
-O cliente descarta frames de outro ID, extended, DLC inválido, versão, sessão
-ou comando divergente. Consultas `DISCOVER`/`INFO` usam sessões correlacionadoras
-distintas para que uma resposta antiga não satisfaça outra consulta.
-
-### 11.7 Comandos
-
-| Comando | Código | Entrada | Estado/regra | `ACK.value` |
-|---|---:|---|---|---:|
-| `DISCOVER` | `0x01` | `parameter=0`, `value=0` | consulta operacional | capabilities |
-| `INFO` | `0x02` | `parameter=0`, `value=selector` | consulta operacional | valor do seletor |
-| `PROBE` | `0x03` | `parameter=selector`, `value=0` | bootloader/app; não captura autoboot | valor do seletor |
-| `SET_NODE_ID` | `0x04` | `value=1..127` | unicast; janela/espera/pronto | node novo |
-| `START_UPDATE` | `0x10` | sessão não zero, tamanho | janela/espera/pronto | tamanho negociado do bloco |
-| `SET_IMAGE_CRC` | `0x11` | CRC esperado | preparação, mesma sessão | CRC esperado |
-| `ERASE` | `0x12` | zero | preparação, CRC recebido | tamanho da imagem |
-| `BEGIN_BLOCK` | `0x20` | layout especial | recebimento, mesma sessão | bytes comprometidos |
-| `DATA` | `0x21` | layout especial | bloco ativo | bytes comprometidos ao fechar bloco |
-| `FINISH` | `0x30` | zero | todos os bytes recebidos | CRC calculado |
-| `VERIFY` | `0x31` | zero | imagem persistida deve validar | CRC persistido |
-| `RUN_APPLICATION` | `0x32` | zero | imagem persistida deve validar | CRC persistido |
-| `ENTER_BOOTLOADER` | `0x33` | zero | app compatível ou bootloader | zero |
-| `ABORT` | `0x3F` | zero | sessão coincide se ativa | zero |
-
-Duplicatas intencionais:
-
-- `START_UPDATE` idêntico em `PREPARE_UPDATE` retorna o bloco negociado;
-- `SET_IMAGE_CRC` repetido com o mesmo CRC retorna ACK;
-- `ERASE` repetido antes do primeiro bloco retorna o tamanho sem novo erase;
-- `BEGIN_BLOCK` repetido do bloco ativo reinicia o buffer volátil;
-- `BEGIN_BLOCK` do último bloco já comprometido retorna o fim do bloco;
-- `FINISH` repetido em `READY`, na mesma sessão, retorna o CRC armazenado.
-
-Há uma permissividade específica na implementação atual: a duplicata de
-`ERASE`, já em `RECEIVE`, com zero bytes comprometidos e nenhum bloco ativo, é
-reconhecida antes de validar `parameter` e `value`. Portanto, mesmo uma repetição
-com esses campos reservados não zero pode receber ACK. Hosts conformes sempre
-devem retransmitir o frame original com campos zero.
-
-### 11.8 INFO
-
-| Seletor | Valor | Retorno |
-|---|---:|---|
-| capabilities | 0 | palavra de capacidades |
-| base da aplicação | 1 | `0x08004000` |
-| tamanho máximo | 2 | `0x0000BC00` / 48128 |
-| tamanho armazenado | 3 | metadata legível ou zero |
-| CRC armazenado | 4 | metadata legível ou zero |
-| UID word 0 | 5 | `UID_BASE + 0` |
-| UID word 1 | 6 | `UID_BASE + 4` |
-| UID word 2 | 7 | `UID_BASE + 8` |
-
-### 11.9 PROBE e capabilities
-
-`PROBE` usa seletores 0 para capabilities e 1, 2 e 3 para as três words do UID.
-O scanner envia quatro pedidos broadcast separados e coleta todas as respostas
-durante uma janela configurável por seletor.
-
-Não há retry, jitter ou atraso aleatório entre respostas de scan. O bootloader
-responde NACK a seletor PROBE desconhecido; a aplicação de referência apenas o
-ignora. O scanner lista somente nodes presentes na resposta de capabilities e
-mostra UID ausente (`-`) quando perde uma ou mais das três words.
-
-A palavra de capabilities é:
-
-| Bits | Significado |
-|---:|---|
-| 0 | aplicação válida |
-| 1 | update ativo |
-| 2 | resposta originada pela aplicação executando |
-| 7..3 | reservado |
-| 15..8 | node ID |
-| 23..16 | versão do protocolo |
-| 31..24 | target code; `0xF1` no port atual |
-
-O UID textual mostrado pelo host concatena `word2 || word1 || word0`, com oito
-dígitos hexadecimais por word, totalizando 24 dígitos.
-
-### 11.10 Códigos NACK
-
-| Código | Valor | Significado |
-|---|---:|---|
-| `NONE` | 0 | sem erro; reservado no enum |
-| `INVALID_COMMAND` | 1 | comando/seletor desconhecido |
-| `INVALID_STATE` | 2 | operação incompatível com o estado |
-| `INVALID_SEQUENCE` | 3 | bloco/frame fora de ordem ou divergente |
-| `INVALID_ADDRESS` | 4 | endereço inválido previsto pela interface |
-| `INVALID_SIZE` | 5 | tamanho da imagem/bloco/payload/node inválido |
-| `FLASH_ERASE` | 6 | falha de erase/preparação persistente |
-| `FLASH_WRITE` | 7 | falha de programação/verificação persistente |
-| `CRC_MISMATCH` | 8 | CRC calculado diferente |
-| `TIMEOUT` | 9 | sessão expirou |
-| `UNSUPPORTED_VERSION` | 10 | versão não suportada |
-| `INVALID_APPLICATION` | 11 | metadata, CRC ou vetores inválidos |
-| `MALFORMED_FRAME` | 12 | ID, DLC ou campos incompatíveis |
-| `SESSION` | 13 | sessão zero/divergente |
-| `CAN` | 14 | erro CAN reservado pelo protocolo |
-| `INTERNAL` | 15 | erro interno reservado |
-
-Nem todo código reservado é necessariamente emitido pelo port atual.
-
----
-
-## 12. CRC-32/ISO-HDLC
-
-Imagem, metadata e configuração do node usam a mesma variante:
-
-| Parâmetro | Valor |
-|---|---:|
-| largura | 32 bits |
-| polinômio normal | `0x04C11DB7` |
-| polinômio refletido no algoritmo C | `0xEDB88320` |
-| init | `0xFFFFFFFF` |
-| refin/refout | verdadeiro/verdadeiro |
-| xorout | `0xFFFFFFFF` |
-| vetor `123456789` | `0xCBF43926` |
-
-O CRC da imagem cobre exatamente os `image_size` bytes do `.bin`, sem incluir
-preenchimento de página ou o `0xFF` usado para completar um último halfword
-ímpar. No host, o resultado equivalente é:
-
-```python
-zlib.crc32(data) & 0xFFFFFFFF
-```
-
-Não existe CRC adicional do CanLoader em cada frame ou bloco. Durante o
-transporte, cada frame depende dos mecanismos de detecção do próprio CAN; a
-integridade fim a fim é confirmada pelo CRC da imagem completa em `FINISH` e
-`VERIFY`.
-
-CRC detecta corrupção acidental. Não fornece autenticidade, autorização,
-confidencialidade ou proteção contra replay/downgrade.
-
----
-
-## 13. Fluxo completo de atualização
+O NAME de 64 bits é enviado little-endian. Na disputa, o menor valor numérico
+vence. O target segue:
 
 ```text
-Host                                      Bootloader
- |                                            |
- | DISCOVER --------------------------------> | confirma presença
- | INFO(APP_MAX_SIZE) ----------------------> | informa 48128
- | START_UPDATE(size, session) -------------> | valida; ACK block_size=100
- | SET_IMAGE_CRC(crc) ----------------------> | guarda CRC; ACK crc
- | ERASE -----------------------------------> | metadata UPDATING, erase app
- | <----------------------------------------- | ACK image_size
- |                                            |
- | BEGIN_BLOCK(index=0,length=100) ---------> | abre buffer; ACK committed=0
- | DATA(seq=0,payload<=5) ------------------> |
- | ...                                        | acumula somente em RAM
- | DATA(seq=19,payload<=5) -----------------> | programa 100 bytes + readback
- | <----------------------------------------- | ACK(DATA, committed=100)
- |                                            |
- | [repete por todos os blocos]               |
- |                                            |
- | FINISH ----------------------------------> | CRC + vetores + marker VALID
- | <----------------------------------------- | ACK CRC
- | VERIFY ----------------------------------> | revalida metadata e imagem
- | <----------------------------------------- | ACK CRC
- | RUN_APPLICATION (opcional) -------------> | ACK, drena CAN, handoff
+load NAME/preferred SA
+  -> send Address Claimed
+  -> wait 250 ms
+       | sem conflito -> CLAIMED/operacional
+       | perde        -> próximo 0x80..0xF7
+       | esgotou      -> espera 0..153 ms, Cannot Claim com SA 0xFE
 ```
 
-### 13.1 Negociação e limites
+Se recebe NAME maior no mesmo SA, o target reanuncia seu claim e reinicia a
+janela. NAME igual é tratado como repetição. Request do PGN `0xEE00`, global ou
+local, provoca nova resposta.
 
-O target F1 responde `100` a `START_UPDATE`. O host não fixa esse valor na
-transferência: usa o bloco devolvido, desde que esteja entre 1 e 100. Somente o
-último bloco pode ser menor. O firmware exige que cada bloco tenha exatamente
-`min(100, bytes_restantes)`.
+Se perde o SA durante uma atualização, o target invalida/limpa a sessão antes
+de aceitar a nova rota. Respostas pendentes do SA anterior são descartadas tanto
+da fila quanto dos mailboxes; continuar uma sessão atravessando a mudança seria
+ambíguo para owner, DA e correlação do host.
 
-O erase da aplicação é arredondado para páginas de 1024 bytes. Se uma imagem
-nova for menor que a anterior, páginas antigas além desse arredondamento podem
-permanecer fisicamente gravadas, mas estão fora de `image_size`, do CRC e do
-intervalo permitido ao Reset Handler; logo não fazem parte da imagem válida.
-Esses bytes antigos continuam fisicamente legíveis e não possuem cobertura de
-integridade; o processo não implementa apagamento seguro da sobra.
+### 10.3 Descoberta pelo host
 
-Um bloco cheio produz 20 frames DATA de 5 bytes. Não existe ACK por frame; há
-ACK somente quando o bloco inteiro foi gravado e conferido.
+O host também reivindica endereço. Seu default é SA `0xF9` e NAME constante de
+laboratório `0xA000000000000001`; ambos são configuráveis. `canloader ls`:
 
-### 13.2 Sequenciamento
+1. completa o claim do Tool;
+2. envia Request global;
+3. coleta todos os NAME/SA, inclusive Cannot Claim;
+4. preserva conflito em vez de sobrescrever um mapa por SA;
+5. envia IDENTIFY individual a cada SA não contestado;
+6. marca como CanLoader apenas resposta correlacionada com versão 2, target
+   code `0xF1`, SA anunciado e flags J1939/Address Claim/TP RX.
 
-Para cada bloco, o firmware exige:
+Antes de operação mutável, `BootloaderClient` resolve o `--name` esperado no SA
+e observa claims durante esperas. Mudança/takeover gera erro de identidade.
+Se o próprio Tool perde o SA para um NAME menor, o cliente invalida a rota e o
+cache de perfil, seleciona fallback AAC e executa novo claim/IDENTIFY antes de
+qualquer comando posterior; uma sessão de update presa ao SA antigo não é
+migrada e precisa recomeçar.
 
-- `block_index == next_block_index`;
-- `block_sequence == block_index modulo 256`;
-- comprimento igual ao esperado;
-- `frame_sequence` crescente a partir de zero;
-- offset `frame_sequence × 5` dentro do bloco;
-- payload exatamente igual a `min(5, bytes restantes no bloco)`;
-- sessão igual à sessão ativa.
+## 11. Commanded Address
 
-O buffer possui 101 bytes para acomodar o preenchimento até a unidade de
-programação. Um último bloco de tamanho ímpar recebe `0xFF` apenas no byte físico
-extra antes de programar o halfword.
+O payload lógico é `NAME_LE64 || newSA`, nove bytes, no PGN global `0xFED8`.
+Como excede oito bytes, o host envia BAM:
 
-### 13.3 Retry e idempotência
-
-O host usa quatro tentativas por default: uma inicial e três retransmissões.
-Para um bloco sem ACK:
-
-1. reenvia `BEGIN_BLOCK`;
-2. aceita `bytes_committed` apenas se for o início ou o fim exato do bloco;
-3. se for o início, reenvia todos os DATA;
-4. se for o fim, considera o ACK anterior perdido e avança;
-5. qualquer contagem intermediária/adiantada é erro de protocolo.
-
-DATA duplicado anterior à sequência esperada é ignorado somente se seu payload
-coincidir byte a byte com o buffer. Payload divergente recebe
-`INVALID_SEQUENCE`.
-
-### 13.4 Timeout
-
-| Timer | Valor | Consequência |
-|---|---:|---|
-| inatividade no firmware | 5000 ms | sai de preparação/recepção e emite NACK assíncrono `ABORT/TIMEOUT` |
-| ACK normal no host | 0,5 s | retransmite |
-| erase no host | 4 s | retransmite antes de expirar a sessão de 5 s |
-| retries | 3 | total de quatro tentativas |
-
-Em `RECEIVE`, timeout tenta marcar a metadata `INVALID`; em
-`PREPARE_UPDATE`, a aplicação anterior ainda não foi apagada. Nos dois casos o
-contexto da sessão é limpo e o estado volta a `WAIT_HOST`.
-
-Na implementação, “atividade” não significa somente bytes do firmware. Todo
-comando conhecido e corretamente decodificado atualiza `last_activity_ms` antes
-do dispatch, inclusive `DISCOVER`, `INFO`, `PROBE` e pedidos que depois resultem
-em certos NACKs. DATA atualiza o timer quando um novo frame válido é aceito.
-Assim, tráfego de inventário/consulta pode prolongar uma transferência parada.
-
-O host reconhece um NACK assíncrono com `command=ABORT` e `value=TIMEOUT` mesmo
-enquanto aguarda outro comando **da mesma sessão**, encerrando imediatamente a
-operação. Um timeout de outra sessão é descartado pela correlação normal.
-
----
-
-## 14. Validação da imagem e handoff
-
-### 14.1 Condições de validade
-
-Uma imagem somente é executável se todas as condições forem verdadeiras:
-
-1. metadata possui magic, versões e CRC de cabeçalho válidos;
-2. estado persistente é exatamente `VALID`;
-3. `image_size` está entre 8 e 48128;
-4. CRC dos bytes da aplicação coincide com `image_crc32`;
-5. MSP inicial é maior que `0x20000000` e menor ou igual a `0x20005000`;
-6. MSP é alinhado em 8 bytes;
-7. Reset Handler tem bit Thumb (`bit 0 = 1`);
-8. endereço do handler sem bit Thumb está em
-   `[0x08004000, 0x08004000 + image_size)`.
-
-O cálculo de CRC lê a Flash em chunks de 128 bytes, evitando buffer proporcional
-ao tamanho da imagem.
-
-### 14.2 Preparação do salto
-
-Antes do jump:
-
-1. CAN é parado e desinicializado;
-2. imagem é validada novamente;
-3. RCC e HAL são desinicializados;
-4. interrupções globais são desabilitadas temporariamente;
-5. SysTick é zerado/desligado;
-6. todas as IRQs NVIC são desabilitadas e limpas;
-7. pendências de SysTick e PendSV são limpas;
-8. barreiras DSB/ISB são executadas;
-9. rotina assembly grava `SCB->VTOR = 0x08004000`;
-10. `CONTROL`, `BASEPRI`, `FAULTMASK` e `PRIMASK` são restaurados a zero;
-11. MSP recebe o primeiro word da aplicação;
-12. execução salta para o Reset Handler.
-
-Se a revalidação final falhar, o firmware solicita reset. No reset seguinte a
-imagem inválida não é executada e o target fica recuperável.
-
-### 14.3 Entrega do ACK de RUN
-
-O firmware primeiro enfileira `ACK(RUN_APPLICATION, stored_crc)`. O caminho
-normal espera pelo menos 50 ms, ausência de resposta pendente e os três mailboxes
-TX livres. Para não bloquear a disponibilidade, 250 ms após o pedido o jump é
-forçado mesmo que o ACK não tenha sido transmitido. Nesse caso extremo, a
-aplicação inicia, mas o host pode registrar timeout.
-
----
-
-## 15. Contrato exigido da aplicação
-
-O bootloader sozinho não consegue receber `ENTER_BOOTLOADER` enquanto a
-aplicação controla o MCU. Portanto, cada aplicação de produção que deseje reboot
-remoto e inventário durante execução deve implementar o contrato abaixo.
-
-### 15.1 Requisitos mínimos de link/startup
-
-- linker com origem `0x08004000` e comprimento máximo `0xBC00`;
-- tabela de vetores no início exato da imagem;
-- VTOR ajustado para `0x08004000` no startup;
-- MSP/Reset Handler dentro dos limites validados;
-- nenhuma gravação da página `0x0800FC00` de metadata;
-- nenhuma gravação da página `0x08003C00` de configuração, exceto por uma API
-  cuidadosamente coordenada com o formato do bootloader.
-
-### 15.2 Descoberta durante execução
-
-A aplicação deve:
-
-1. ler e validar o mesmo registro persistente de node ID;
-2. usar fallback node 1 se inválido;
-3. configurar CAN no mesmo bitrate/pinagem;
-4. aceitar `PROBE` unicast e broadcast;
-5. devolver capabilities com `APPLICATION_VALID` e `APPLICATION_RUNNING`;
-6. devolver as três words do UID para seus seletores;
-7. usar o ID de resposta calculado com o node atual.
-
-### 15.3 Entrada remota no bootloader
-
-A aplicação deve aceitar `ENTER_BOOTLOADER` **somente por unicast no próprio
-node**, com protocolo 1, sessão não zero, campos reservados zero e DLC 8.
-
-Depois deve:
-
-1. enviar `ACK(ENTER_BOOTLOADER, session, 0)`;
-2. aguardar confirmação de transmissão quando possível;
-3. habilitar clocks PWR/BKP e acesso de escrita ao backup domain;
-4. escrever `DR1=0xB007` e `DR2=0x4C44`;
-5. executar barreira de dados;
-6. chamar `NVIC_SystemReset()`.
-
-A aplicação de teste espera 50 ms e confirmação TX; força o reset em 250 ms se
-o ACK não concluir. Em uma aplicação com RTOS, a mesma semântica deve ser
-preservada com exclusão mútua e sincronização adequadas.
-
-`BKP->DR1` e `BKP->DR2` tornam-se recursos reservados por esse contrato. A
-aplicação não deve usá-los simultaneamente para outro protocolo/estado RTC sem
-coordenar o formato, ou poderá gerar/perder pedidos de boot.
-
-### 15.4 Aplicação de referência
-
-[`TestApplication/Src/main.c`](../TestApplication/Src/main.c) implementa o
-contrato sem HAL e sem alocação dinâmica. Ela:
-
-- usa HSI de 8 MHz e bxCAN a 500 kbit/s;
-- responde `PROBE` e `ENTER_BOOTLOADER`;
-- pisca duas vezes (80 ms ligado, 100 ms desligado, 80 ms ligado e 740 ms de
-  pausa);
-- deixa o LED continuamente aceso se receber `PRIMASK != 0`, tornando falha do
-  handoff observável;
-- usa SysTick de 1 ms e laço não bloqueante.
-
-Ela é uma referência de integração e teste, não uma aplicação final de produto.
-
-No firmware de referência, PCLK1 é 8 MHz, prescaler CAN é 1, BS1 é 13 TQ e BS2
-é 2 TQ: são 16 TQ por bit e sample point de 87,5%. O timing difere do
-bootloader, mas o bitrate permanece 500 kbit/s.
-
-Esse CAN deriva do HSI interno na aplicação de teste. Uma aplicação de produção
-deve verificar a tolerância do oscilador ao longo de tensão e temperatura contra
-o orçamento de erro do barramento, preferindo uma fonte de clock com precisão
-adequada quando necessário. A escolha HSI ainda não foi validada fisicamente.
-
----
-
-## 16. Operação com vários dispositivos
-
-### 16.1 Descoberta
-
-`canloader ls` envia, em sequência, quatro broadcasts `PROBE`: capabilities e
-três words do UID. Para cada seletor, coleta respostas durante `--scan-timeout`
-(default 0,2 s), valida versão/comando/sessão e associa o node ao ID de resposta.
-
-Uma linha válida apresenta:
-
-- node derivado de `response_id - 0x580`;
-- target code;
-- versão do protocolo;
-- modo `application`, `update` ou `bootloader`;
-- validade da aplicação;
-- UID, se as três respostas foram coletadas.
-
-O node anunciado dentro de capabilities deve coincidir com o node derivado do
-ID; entradas divergentes são ignoradas.
-
-### 16.2 Atualização direcionada
-
-Todos os comandos mutáveis usam `--node`. Exemplo para atualizar somente o node
-7:
-
-```sh
-CAN_BITRATE=500000 python -m canloader reboot \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX \
-  --node 7
-
-CAN_BITRATE=500000 python -m canloader update firmware.bin \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX \
-  --node 7 \
-  --run
+```text
+CM: 20 09 00 02 FF D8 FE 00
+DT1: 01 name0 name1 name2 name3 name4 name5 name6
+DT2: 02 name7 newSA FF FF FF FF FF
 ```
 
-O `reboot` é necessário quando a aplicação está executando, pois a aplicação de
-referência não implementa `DISCOVER`, `INFO` nem comandos de update; ela expõe
-somente `PROBE` e `ENTER_BOOTLOADER`. Se o node já estiver no bootloader,
-`ENTER_BOOTLOADER` apenas o mantém em `WAIT_HOST`, portanto o mesmo fluxo é
-seguro.
+O target autoriza BAM somente para esse PGN e capacidade de 9 bytes. Ele ignora
+NAME diferente, SA `FE/FF`, falha de persistência e comando durante update. Não
+existe ACK próprio. O host aguarda o mesmo NAME no novo SA por uma janela
+completa de claim, exige ocupante único nesse endereço e conclui com IDENTIFY
+dirigido. Se o NAME perder o endereço e migrar durante a arbitragem, o comando
+falha em vez de reportar sucesso transitório. Em timeout, o orçamento
+`--retries` retransmite o BAM inteiro; persistir novamente o mesmo preferred SA
+é uma operação idempotente. O retry espera ao menos `transport_timeout` para
+que um BAM parcialmente recebido expire no target antes da nova TP.CM.
 
-Os filtros dos demais nodes não aceitam `0x607`/`0x707`, e broadcasts de update
-são ignorados. Assim, apenas o node 7 altera sua Flash, desde que todos os nodes
-tenham endereços únicos.
+## 12. Transport Protocol
 
-### 16.3 Provisionamento de nodes
+### 12.1 Escopo do receiver embarcado
 
-Toda placa com a página de configuração apagada usa node 1. Consequentemente,
-várias placas novas com o mesmo bootloader entram na rede com o mesmo endereço.
-O provisionamento seguro é:
+- mensagem de 9 a 1785 bytes;
+- uma sessão ativa;
+- RTS/CTS para a expectativa DM16 exata;
+- BAM apenas para Commanded Address;
+- janela CTS máxima 8;
+- deadline 1250 ms renovado a cada TP.DT;
+- EOM_ACK após remontagem completa;
+- ABORT reason 1 (busy), 2 (resources/validação) ou 3 (timeout).
 
-1. conectar uma placa nova por vez;
-2. gravar/iniciar o bootloader;
-3. executar `set-node` para atribuir endereço único;
-4. confirmar com `ls` e UID;
-5. desconectar ou adicionar a placa já configurada à rede final;
-6. repetir para cada dispositivo.
+RTS só é aceito se source, destination, PGN, total size e packet count
+coincidirem com a expectativa criada por DM14 WRITE. `sender-max` precisa ser
+não zero e limita, junto da janela local 8 e dos pacotes restantes, cada CTS.
+Cada DT tem sequence byte e sete bytes. O último copia apenas os bytes restantes.
 
-Se dois dispositivos possuem o mesmo node, suas respostas usam o mesmo CAN ID.
-Valores divergentes podem provocar erro de bit e retransmissões; o scanner não
-consegue separá-los. Não há address claiming, arbitragem de endereço nem
-provisionamento individual por UID na versão atual.
+Ao completar DM16, o receiver coloca EOM_ACK na fila e entrega evento à FSM; a
+FSM então valida count, grava Flash e coloca DM15. Portanto EOM_ACK não garante
+programação.
 
-Além disso, `SET_NODE_ID` enviado ao endereço duplicado é aceito por **todos**
-os dispositivos que compartilham aquele filtro; o UID não pode ser usado como
-destino. Isolar fisicamente as placas é, portanto, obrigatório para corrigir o
-conflito de forma determinística.
+Frames de origem/destino/PGN alheios podem ser ignorados. Sequência errada
+encerra a sessão e, no target atual, usa ABORT reason 2. Timeout em BAM não gera
+ABORT por ser broadcast.
 
-### 16.4 Comando set-node
+### 12.2 Sender host
 
-```sh
-CAN_BITRATE=500000 python -m canloader reboot \
-  --interface slcan --channel /dev/cu.usbmodemXXXX --node 1
+O host envia RTS, espera CTS, respeita exatamente a janela e só conclui após
+EOM_ACK correspondente em size/count/PGN. Em exceção, tenta TP.ABORT reason 250.
+BAM não espera resposta e usa 50 ms após o BAM e antes de cada pacote DT,
+inclusive o primeiro.
 
-CAN_BITRATE=500000 python -m canloader set-node 7 \
-  --interface slcan --channel /dev/cu.usbmodemXXXX --node 1
+Para bloco de 100 bytes, DM16 lógico tem 101 bytes (`FF+data`), 15 DT e duas
+janelas 8+7.
+
+Os 100 bytes são uma escolha de produto, não o limite de TP. O valor é par e
+portanto alinha os blocos intermediários a halfword; limita o buffer estático a
+101 bytes; mantém retry restrito a uma unidade pequena; e ainda exercita mais de
+uma janela CTS. O último bloco pode ser menor e ímpar, recebendo padding `FF`
+somente para a programação física.
+
+## 13. Proprietary A
+
+DM14/15/16 descrevem uma operação de memória, mas não representam conceitos
+do produto como tamanho total da imagem, CRC esperado, modo aplicação,
+finalização ou handoff. Esses conceitos permanecem no PGN destination-specific
+Proprietary A `0xEF00`. Isso evita atribuir semântica CanLoader a campos
+padronizados que não a possuem e permite que o DM mantenha key/seed `FFFF`.
+
+### 13.1 Request e response
+
+```text
+request : [02, command, session, parameter, valueLE32]
+response: [02, ACK|NACK, echoed_command, echoed_session, valueLE32]
+ACK=80, NACK=81
 ```
 
-A CLI recebe o ACK no endereço antigo, cria um cliente para o node novo e usa
-`DISCOVER` para confirmar o reset/reendereçamento.
+Frames são sempre PDU1 dirigidos. O decoder exige DLC 8, versão 2 e DA não
+global. O perfil exige sessão `1..255`, inclusive para consultas; zero é
+rejeitado. O cliente valida PGN, SA, DA, versão, comando e sessão antes de
+associar uma resposta a uma requisição.
 
-Se o ACK antigo for perdido, a gravação e o reset ainda podem ter acontecido. O
-cliente retransmite no endereço antigo e pode terminar em timeout sem tentar o
-novo endereço, pois só faz essa confirmação depois de receber o ACK. Nessa
-situação, pare comandos mutáveis e execute `canloader ls` para localizar o node
-efetivo pelo UID.
+### 13.2 Comandos
 
----
+| Código | Nome | Regras principais | ACK value |
+|---:|---|---|---:|
+| `01` | IDENTIFY | parameter/value zero; não abre update; session não zero | capabilities |
+| `02` | INFO | value zero; selector válido; session não zero | dado solicitado |
+| `10` | START_UPDATE | session não zero, size 8..44032 | block size 100 |
+| `11` | SET_IMAGE_CRC | mesmo owner/session, PREPARE | CRC esperado |
+| `30` | FINALIZE | todos bytes, sem DM/close, value=CRC | CRC calculado |
+| `31` | VERIFY | parameter/value zero | CRC persistido |
+| `32` | RUN_APPLICATION | imagem válida | CRC persistido |
+| `33` | ENTER_BOOTLOADER | app: request/reset; bootloader: permanece | zero |
+| `3F` | ABORT | owner quando update ativo | zero |
 
-## 17. Ferramenta host Python
+O enum C ainda chama o comando `0x30` de `FINISH`; a nomenclatura pública v2 é
+FINALIZE.
 
-### 17.1 Estrutura
+### 13.3 INFO
 
-| Arquivo | Responsabilidade |
+| Selector | Valor |
+|---:|---|
+| 0 | capabilities |
+| 1 | `0x08005000` |
+| 2 | `0x0000AC00` / 44032 |
+| 3 | tamanho da metadata legível ou zero |
+| 4 | CRC da metadata legível ou zero |
+| 5..7 | UID words 0..2 |
+| 8..9 | NAME low/high |
+| 10 | Source Address atual |
+
+No bootloader, selectors 3/4 podem refletir um cabeçalho legível mesmo em estado
+UPDATING/INVALID; eles não afirmam que a imagem é executável. O bit
+`APPLICATION_VALID` e o comando VERIFY são as fontes para essa decisão. A
+aplicação de referência só publica esses valores quando a metadata está VALID.
+
+Capabilities:
+
+```text
+bit 0 application valid
+bit 1 update active
+bit 2 application running (setado pela aplicação; não pelo bootloader)
+bit 3 J1939
+bit 4 Address Claim
+bit 5 TP RX
+bits 15..8 current SA
+bits 23..16 protocol version 2
+bits 31..24 target code F1
+```
+
+### 13.4 NACK/boot_error
+
+| Código | Significado |
+|---:|---|
+| 0 | none |
+| 1 | invalid command |
+| 2 | invalid state |
+| 3 | invalid sequence |
+| 4 | invalid address |
+| 5 | invalid size |
+| 6 | Flash erase |
+| 7 | Flash write |
+| 8 | CRC mismatch |
+| 9 | timeout |
+| 10 | unsupported version |
+| 11 | invalid application |
+| 12 | malformed frame |
+| 13 | session/owner |
+| 14 | CAN |
+| 15 | internal |
+| 16 | busy |
+| 17 | unsupported operation |
+
+O mesmo enum aparece no `value` de NACK e, truncado a 24 bits, no campo
+diagnóstico proprietário de DM15.
+
+## 14. DM14, DM15 e DM16
+
+### 14.1 DM14
+
+DM14 tem DLC 8:
+
+```text
+b0       length bits 7..0
+b1[7:5] length bits 10..8
+b1[4]   pointer type (deve ser 0/direct)
+b1[3:1] command
+b1[0]   reservado fixo 1
+b2..5   pointer uint32 LE
+b6..7   key/user level = FFFF
+```
+
+O decoder rejeita length acima de 1784, objeto indireto e key diferente no
+dispatcher. Esse é o limite do codec; o updater desta Blue Pill aceita no
+máximo 100 bytes por WRITE e, em ERASE, no máximo 43 páginas. O significado da
+unidade é definido pela operação: páginas em ERASE, bytes em WRITE.
+
+### 14.2 ERASE
+
+`length=ceil(expected_size/1024)` páginas, pointer `0x08005000`. Após validar
+manifest/CRC/estado, o target enfileira DM15 PROCEED. O erase só começa quando
+essa resposta saiu da fila e os mailboxes estão ociosos:
+
+1. metadata `UPDATING` é escrita e verificada;
+2. exatamente `length*1024` bytes da aplicação são apagados;
+3. erase é conferido;
+4. estado muda para RECEIVE;
+5. DM15 COMPLETED é enviado;
+6. fica `close_pending` até DM14 command 4 com os mesmos pointer/length.
+
+### 14.3 WRITE
+
+Pointer precisa ser `APP_BASE+bytes_committed`. Length precisa ser
+`min(100, expected_size-bytes_committed)`. Para 1..7 bytes, DM16 é direto com
+count no byte 0. Para 8..100, a mensagem lógica TP começa em `FF`.
+
+Somente após DM15 PROCEED o host envia DM16. O target programa halfwords; se o
+último length for ímpar, acrescenta `FF` fora do CRC. Em sucesso, atualiza
+`bytes_committed`, registra operação anterior, envia DM15 COMPLETED e exige
+close com pointer/length idênticos.
+
+### 14.4 DM15 proprietário
+
+```text
+b0/b1 length allowed + status; bits reservados b1.4 e b1.0 = 1
+b2..4 boot_error CanLoader LE24
+b5    00
+b6..7 FFFF
+```
+
+Status aceitos: PROCEED 0, BUSY 1, COMPLETED 4, FAILED 5. Essa utilização de
+bytes 2..5 é documentada como extensão, não EDCP SAE.
+
+### 14.5 STATUS e close
+
+STATUS do owner retorna:
+
+- BUSY com length atual durante erase;
+- PROCEED com length atual aguardando DM16;
+- COMPLETED com length anterior quando close pendente;
+- COMPLETED/zero quando não há operação.
+
+Operation Completed repete pointer/length anterior e não recebe resposta de
+sucesso; sua função é liberar `close_pending`. Operation Failed recebido limpa
+a operação/TP best-effort sem DM15. Não há timer close de 100 ms: o timeout
+global de 5 s cobre essa espera.
+
+Como o close não tem ACK positivo, o cliente o transmite uma vez mais o número
+configurado de retries. O target libera `close_pending` na primeira cópia e
+trata duplicatas byte a byte equivalentes como idempotentes e silenciosas, para
+não deixar um DM15 tardio contaminar a operação seguinte. Ainda não há consulta
+dedicada que confirme o close; perder todas as cópias faz o próximo WRITE
+receber INVALID_SEQUENCE.
+
+### 14.6 Fronteira de proteção da Flash
+
+O pointer de DM14 é absoluto por exigência do perfil, mas não constitui uma
+permissão arbitrária de escrita. ERASE só aceita exatamente `APP_BASE` e o número
+de páginas derivado do manifest. WRITE só aceita
+`APP_BASE+bytes_committed` e o comprimento exato do bloco esperado. Depois
+dessas validações, a FSM converte o acesso em offset da região
+`BOOT_FLASH_REGION_APPLICATION`; o port não recebe endereço bruto do host.
+
+A abstração de Flash mantém regiões independentes para aplicação, metadata e
+device config, valida `offset <= size` antes de calcular o restante e exige:
+
+- erase alinhado e múltiplo de 1024 bytes;
+- write alinhado e múltiplo de halfword;
+- célula apagada (`FFFF`) ou já igual ao valor pedido;
+- leitura de volta de cada halfword programado;
+- varredura de cada halfword apagado após erase;
+- unlock apenas durante a operação e lock ao terminar.
+
+Essas regras protegem bootloader/config/metadata contra um pointer de aplicação
+malformado. Elas não substituem WRP/RDP, detecção de subtensão ou assinatura de
+firmware.
+
+## 15. Sessão, ownership e idempotência
+
+`START_UPDATE` grava em RAM `owner_address`, `session`, `expected_size` e
+timestamp. Session zero é inválida. Outro SA/session recebe SESSION ou BUSY.
+
+Comportamentos repetíveis:
+
+- START idêntico retorna novamente 100;
+- SET_CRC idêntico ecoa o CRC; valor diferente é erro;
+- ERASE atual duplicado retorna BUSY/PROCEED;
+- ERASE duplicado, enquanto ainda é a última operação registrada, retorna COMPLETED;
+- WRITE atual duplicado retorna PROCEED;
+- WRITE duplicado, enquanto ainda é a última operação registrada, retorna COMPLETED;
+- FINALIZE repetido em READY, mesmo owner/session/CRC, retorna CRC;
+- frame de resposta atrasado só é aceito pelo host se toda correlação coincidir.
+
+Uma repetição divergente não reinicia a operação. O host usa no máximo três
+retransmissões além da primeira por default e nunca transforma EOM_ACK perdido
+em confirmação de Flash.
+
+## 16. Máquina de estados
+
+### 16.1 Inicialização
+
+`bootloader_init()` executa uma sequência fail-closed:
+
+1. zera todo o contexto estático, liga o LED e entra em INIT;
+2. lê `FLASHSIZE_BASE` e recusa MCU com menos de 64 KiB;
+3. carrega o último journal NAME/SA válido ou gera os defaults;
+4. inicializa FSMs de Address Claim e TP e autoriza apenas o BAM de Commanded
+   Address;
+5. consome, uma única vez, a assinatura de boot nos backup registers;
+6. configura os filtros para preferred SA e global, inicia bxCAN e anuncia
+   Address Claimed;
+7. relê metadata, CRC e vetores da aplicação;
+8. entra em BOOT_WINDOW se a imagem for válida ou WAIT_HOST caso contrário.
+
+O Address Claim continua assincronamente no laço principal. A janela de boot
+começa ao final da validação da imagem, não depois dos 250 ms de claim. Antes de
+`CLAIMED`, o dispatcher trata gerenciamento de rede e TP permitido, mas não
+aceita comandos de controle ou DM dirigidos.
+
+### 16.2 Estados
+
+| Estado | Invariante |
 |---|---|
-| `constants.py` | IDs, comandos, seletores, capabilities e NACKs |
-| `protocol.py` | frames, validação e serialização LE |
-| `crc.py` | CRC equivalente com `zlib.crc32` |
-| `bus.py` | adaptador mínimo em torno de `python-can` |
-| `client.py` | scanner, correlação, retries, blocos e update completo |
-| `cli.py` | argumentos, subcomandos, saída e códigos de erro |
-| `errors.py` | hierarquia de falhas configuráveis, CAN, protocolo e dispositivo |
+| INIT | ports ainda sendo preparados |
+| BOOT_WINDOW | aplicação válida; nenhuma sessão de escrita necessária |
+| WAIT_HOST | serviço disponível; app inválida ou retenção explícita |
+| PREPARE_UPDATE | owner/size definidos; CRC/erase pendentes |
+| ERASE | erase aceito e aguardando/realizando Flash |
+| RECEIVE | metadata não executável; blocos sequenciais |
+| VERIFY | finalização calcula CRC/vetores |
+| READY | aplicação válida |
+| RUN_APPLICATION | ACK em drenagem e jump pendente |
+| RESET | estado reservado |
+| ERROR | init de Flash/CAN/claim falhou |
 
-O cliente aceita um barramento injetado, permitindo testes sem importar ou abrir
-hardware CAN.
+IDENTIFY/INFO não retêm por si só um autoboot além de seu processamento. START
+válido durante BOOT_WINDOW move para PREPARE. ENTER no bootloader move para
+WAIT_HOST. Uma mudança de SA durante update invalida a sessão para evitar que o
+owner/rota fiquem incoerentes.
 
-### 17.2 Instalação
+### 16.3 Iteração cooperativa
 
-Python **3.10 ou superior** é obrigatório. O Python 3.9 fornecido por versões do
-Xcode não atende ao `requires-python` do pacote.
+Cada `bootloader_task()` atualiza LED, claim e TP, tenta drenar a fila TX e
+processa no máximo oito frames RX. Em seguida repete os serviços temporais,
+executa erase pendente somente depois de DM15 PROCEED ter saído, avalia timeout
+de update e decide jump/reset. O limite RX evita que tráfego contínuo impeça
+timers e transmissões. Erase, programação e cálculo de CRC ainda são síncronos;
+por isso sua latência real precisa ser medida sob carga de barramento.
+
+## 17. Fluxo completo de atualização
+
+```text
+scan/claim e identity lock
+  -> INFO(app base/max)
+  -> se application_running: ENTER_BOOTLOADER e aguardar reclaim
+  -> START_UPDATE(size, session)
+  -> SET_IMAGE_CRC(crc, session)
+  -> DM14 ERASE(page count)
+       <- DM15 PROCEED
+       <- DM15 COMPLETED
+       -> close ERASE
+  -> para cada bloco
+       DM14 WRITE(pointer,length)
+       <- DM15 PROCEED
+       DM16 direto ou TP RTS/CTS
+       <- EOM_ACK, se TP
+       <- DM15 COMPLETED
+       -> close WRITE
+  -> FINALIZE(value=expected CRC)
+  -> VERIFY
+  -> RUN opcional
+```
+
+O host calcula CRC-32/ISO-HDLC com `zlib.crc32`, confere tamanho contra INFO e
+acompanha progresso somente após commit de blocos.
+
+## 18. CRC e validação da aplicação
+
+CRC usado:
+
+```text
+CRC-32/ISO-HDLC (IEEE)
+poly normal 0x04C11DB7 / refletido 0xEDB88320
+init 0xFFFFFFFF
+refin/refout true
+xorout 0xFFFFFFFF
+check("123456789") = 0xCBF43926
+```
+
+A imagem válida exige:
+
+- metadata legível e estado VALID;
+- tamanho `8..44032`;
+- CRC exato de `[APP_BASE, APP_BASE+image_size)`;
+- MSP `>0x20000000`, `<=0x20005000`, alinhado a 8;
+- Reset Handler com Thumb bit;
+- endereço do handler sem Thumb dentro da imagem declarada.
+
+Não são avaliadas assinatura, versão de hardware, demais vetores ou semântica
+da aplicação.
+
+## 19. Handoff
+
+Antes do salto:
+
+1. valida a imagem novamente;
+2. para/desinicializa CAN;
+3. desinicializa RCC/HAL;
+4. desabilita IRQs;
+5. zera SysTick;
+6. desabilita/limpa todas as IRQs NVIC;
+7. limpa PendST/PendSV;
+8. executa DSB/ISB;
+9. grava `SCB->VTOR=0x08005000`;
+10. zera CONTROL/BASEPRI/FAULTMASK/PRIMASK;
+11. carrega MSP;
+12. salta para Reset Handler.
+
+A aplicação de teste para deliberadamente com LED aceso se observar PRIMASK
+mascarado, tornando regressão de handoff visível.
+
+## 20. Contrato da aplicação
+
+Toda aplicação atualizável precisa:
+
+- ser linkada em `0x08005000` e caber antes de `0x0800FC00`;
+- colocar `.isr_vector` exatamente na origem;
+- configurar VTOR no startup;
+- não apagar device config/metadata;
+- tolerar estado de periféricos documentado ou reinicializá-los;
+- usar o mesmo NAME/preferred SA se quiser descoberta contínua;
+- implementar Address Claim/Request;
+- responder IDENTIFY/INFO com `APPLICATION_RUNNING`;
+- aceitar ENTER_BOOTLOADER dirigido;
+- gravar `BKP->DR1=0xB007`, `BKP->DR2=0x4C44`;
+- entregar ACK quando possível e resetar em até 250 ms.
+
+A aplicação de referência também aceita Commanded Address por BAM e persiste o
+SA. Ela não aceita DM14/15/16 nem update enquanto roda.
+
+O bootloader consome a assinatura uma única vez e a apaga. Reset comum sem a
+assinatura abre apenas 1500 ms; reset remoto abre 10000 ms.
+
+### 20.1 Por que usar backup registers
+
+`ENTER_BOOTLOADER` é recebido enquanto a aplicação controla CAN, mas quem deve
+alterar Flash é o bootloader após um reset completo. Os registradores
+`BKP->DR1/DR2` preservam a intenção através de `NVIC_SystemReset()` sem depender
+de RAM `.noinit`, valor de periférico ou frame que precisaria sobreviver ao
+reset. Duas magias reduzem aceitação acidental; o consumo one-shot evita que
+resets seguintes mantenham para sempre a janela longa. Isso é sinalização, não
+autenticação: qualquer Tool capaz de enviar o comando dirigido pode solicitá-la.
+
+## 21. Ferramenta host
+
+### 21.1 Componentes
+
+| Módulo Python | Função |
+|---|---|
+| `bus.py` | adapta `python-can`, preserva extended IDs |
+| `j1939.py` | ID/PGN/NAME e validações |
+| `address_claim.py` | claim do Tool, AddressBook e conflitos |
+| `transport.py` | TP encoders/sender RTS/CTS/BAM |
+| `protocol.py` | Proprietary A e DM codecs |
+| `client.py` | scanner, lock de identidade, update/retry |
+| `cli.py` | subcomandos e argumentos |
+
+### 21.2 Instalação
 
 ```sh
-python3 --version
-python3 -m venv .venv
+python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install --upgrade pip
 python -m pip install -e 'Tools/canloader[test]'
 ```
 
-Dependências declaradas:
+Python 3.9 do Xcode não satisfaz `requires-python >=3.10`. Uma criação de venv
+interrompida pode deixar diretório sem `bin/activate`; recrie o ambiente.
 
-| Pacote | Restrição | Uso |
-|---|---:|---|
-| `setuptools` | `>=68` | backend de build |
-| `python-can` | `>=4.3` | backends CAN |
-| `pyserial` | `>=3.5` | transporte serial usado por SLCAN |
-| `pytest` | `>=7`, opcional `test` | testes automatizados |
+### 21.3 Comandos
 
-As dependências possuem apenas limites inferiores e o repositório não contém
-lockfile. Para uma entrega reproduzível, o processo de release deve registrar
-as versões efetivamente instaladas ou introduzir um arquivo de lock compatível
-com a política do projeto.
-
-### 17.3 Subcomandos
-
-| Comando | Resultado |
-|---|---|
-| `ls` | inventário broadcast que não captura o autoboot nem altera persistência |
-| `info` | lê capabilities, mapa, metadata e UID de um node |
-| `update FILE` | transfere e verifica `.bin`; `--run` executa ao final |
-| `verify` | pede revalidação da imagem persistida |
-| `run` | executa a aplicação válida |
-| `reboot` | pede à aplicação para resetar e confirma o bootloader |
-| `set-node NEW` | persiste endereço, aguarda reset e confirma node novo |
-
-Opções comuns dos comandos por node:
-
-- `--interface`: backend `python-can`;
-- `--channel`: canal/dispositivo;
-- `--node`: endereço 1..127;
-- `--timeout`: ACK normal, default 0,5 s;
-- `--erase-timeout`: default 4 s;
-- `--retries`: retransmissões após a primeira tentativa, default 3;
-- `--verbose`: log dos frames TX/RX.
-
-`ls` não usa `--node`; possui `--scan-timeout` por seletor.
-
-### 17.4 macOS com SLCAN
-
-Descubra o dispositivo serial antes e depois de conectar o adaptador:
-
-```sh
-ls /dev/cu.*
+```text
+ls            inventário de claims e IDENTIFY
+info          capabilities/mapa/metadata/UID/NAME/SA
+update FILE   update completo, `--run` opcional
+verify        valida imagem persistida
+run           solicita handoff
+reboot        aplicação -> bootloader
+set-address   Commanded Address e confirmação por claim
 ```
 
-Em um CANable/CAN adapter com firmware SLCAN, use o caminho `/dev/cu.*`, não o
-`/dev/tty.*`, para uma sessão iniciada pelo Mac:
+Opções principais: `--interface`, `--channel`, `--bitrate`, `--tty-baudrate`,
+`--address`, `--name`, `--source-address`, `--source-name`, `--timeout`,
+`--transport-timeout`, `--erase-timeout`, `--claim-timeout`, `--scan-timeout`,
+`--retries`, `--verbose`. O default de `--transport-timeout` é 1,5 s.
+
+### 21.4 macOS/SLCAN
+
+No macOS, conecte o adaptador e compare a lista antes/depois:
 
 ```sh
-CAN_BITRATE=500000 python -m canloader ls \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX
+ls -1 /dev/cu.*
+system_profiler SPUSBDataType
 ```
 
-Exemplo completo no canal observado durante o desenvolvimento:
+Prefira a entrada `/dev/cu.*` correspondente ao adaptador; ela é o canal
+serial passado ao backend, não uma interface de rede `can0`. Um nome típico é
+`/dev/cu.usbmodem2074318558421`. Primeiro valide descoberta e identidade:
 
 ```sh
-CAN_BITRATE=500000 python -m canloader info \
-  --interface slcan \
+python -m canloader ls --interface slcan \
   --channel /dev/cu.usbmodem2074318558421 \
-  --node 1 \
-  --verbose
+  --bitrate 500000 --verbose
 ```
 
-O nome `/dev/cu.usbmodem...` pode mudar após reconexão. O bitrate deve coincidir
-com 500000. A CLI passa `interface` e `channel` ao `python-can`; a variável
-`CAN_BITRATE` é consumida pelo backend SLCAN, que envia ao adaptador os comandos
-de bitrate/abertura apropriados. O CanLoader não altera o firmware do adaptador,
-não oferece `--bitrate` próprio e não executa configuração SocketCAN do sistema.
+Depois use o NAME e o SA retornados para bloquear o alvo:
 
-### 17.5 Linux/SocketCAN
+```sh
+python -m canloader info --interface slcan \
+  --channel /dev/cu.usbmodem2074318558421 --bitrate 500000 \
+  --address 0x80 --name 0x8000000000123456
+
+python -m canloader update TestApplication/build/canloader_test_app.bin \
+  --interface slcan --channel /dev/cu.usbmodem2074318558421 \
+  --bitrate 500000 --address 0x80 --name 0x8000000000123456 \
+  --run --verbose
+```
+
+Substitua o NAME do exemplo pelo inventariado. Os backends seriais recebem
+`bitrate` quando `--interface slcan` ou `--interface seeedstudio`; neste último,
+a camada também força `frame_type=EXT`. `--tty-baudrate` é opcional e seleciona
+a velocidade da UART do adaptador, diferente dos 500 kbit/s do CAN. A CLI v2 não
+lê `CAN_BITRATE` do ambiente: use `--bitrate`. Na serial Lawicel, frames de 29
+bits devem aparecer com o prefixo maiúsculo `T`; adaptador/firmware que aceite
+somente `t` de 11 bits é incompatível.
+
+### 21.5 Linux/SocketCAN
+
+O operador configura `can0` fora da CLI. A implementação usa CAN raw em user
+space; não deve compartilhar NAME/SA com sockets CAN_J1939 do kernel. Exemplo
+de preparação, deliberadamente externo ao CanLoader:
 
 ```sh
 sudo ip link set can0 down
-sudo ip link set can0 type can bitrate 500000 restart-ms 100
+sudo ip link set can0 type can bitrate 500000
 sudo ip link set can0 up
-ip -details -statistics link show can0
-
 python -m canloader ls --interface socketcan --channel can0
 ```
 
-O uso de `sudo` ocorre apenas na configuração externa do sistema; a CLI nunca o
-invoca.
+## 22. Atualização de apenas um dispositivo
 
----
+Em uma rede com vários bootloaders, desde que os NAMEs sejam distintos:
 
-## 18. Requisitos e processo de build
+1. cada MCU anuncia seu NAME;
+2. preferred SA pode coincidir inicialmente;
+3. Address Claim resolve o conflito e atribui rotas diferentes;
+4. `ls` apresenta NAME↔SA;
+5. o operador passa ambos `--name` e `--address`;
+6. o host recusa se a associação mudou/está contestada;
+7. DM14/DM16 são PDU1 dirigidos;
+8. os outros targets ignoram DA diferente;
+9. progresso/CRC final são atribuídos ao NAME bloqueado.
 
-### 18.1 Software necessário
+Essa propriedade depende de NAMEs únicos. Dois dispositivos com o mesmo NAME
+são erro de provisionamento e não podem ser selecionados com segurança. O NAME
+derivado do UID reduz colisões na bancada, mas, por usar apenas 21 bits do
+resultado, não substitui provisionamento de produção.
 
-- GNU Make;
-- GNU Arm Embedded Toolchain com `arm-none-eabi-gcc`, `objcopy`, `objdump` e
-  `size`;
-- alternativamente, toolchain GNU empacotado no STM32CubeIDE;
-- Python 3.10+ para host/testes;
-- compilador C nativo com suporte C11 para testes C;
-- STM32CubeProgrammer CLI e ST-LINK para gravação inicial;
-- interface CAN e ferramentas próprias do sistema para validação física.
+## 23. Timeouts e progresso
 
-Nenhuma versão exata do GCC ARM é fixada no repositório. O linker usa a palavra
-`READONLY`, disponível em GCC 11 ou superior; os comentários do script indicam
-que ela deve ser removida se um GCC 10 for usado.
+| Função | Valor | Natureza |
+|---|---:|---|
+| Address Claim | 250 ms | J1939/network management |
+| Cannot Claim | 0..153 ms | implementação target |
+| TP target | 1250 ms | perfil target |
+| intervalo BAM → DT e entre DT no host | 50 ms | configuração host |
+| update/DM close | 5000 ms | CanLoader proprietário |
+| boot normal | 1500 ms | produto |
+| boot solicitado | 10000 ms | produto |
+| resposta antes de ação | 50 ms | produto |
+| ação forçada | 250 ms | produto |
 
-O projeto `.ioc` que originou a configuração registra STM32CubeMX 6.18.1,
-device database `DB.6.0.181` e STM32Cube FW_F1 V1.8.7. Esses valores são a base
-de reprodução dos arquivos gerados, não uma promessa de compatibilidade com
-qualquer versão futura do CubeMX/HAL.
+`last_activity_ms` é atualizado por comandos/DM válidos e commits. Ao expirar
+update, o target invalida se necessário, limpa TP/operação e envia NACK
+assíncrono de ABORT/TIMEOUT ao owner.
 
-No macOS, o Makefile procura automaticamente o toolchain em:
+## 24. Tratamento de falhas
 
-```text
-/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/
-  com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin
-```
+| Falha | Reação |
+|---|---|
+| Flash detectada <64 KiB | estado ERROR |
+| CAN/claim não inicia | estado ERROR |
+| bus-off em runtime | bxCAN usa ABOM; serviço avançado/telemetria não implementados |
+| frame standard/RTR | rejeitado no port/decoder |
+| versão diferente de 2 | NACK unsupported version quando possível |
+| NAME perde SA | fallback; update ativo é invalidado |
+| sem SA | Cannot Claim, sem operação dirigida |
+| owner/session errado | DM15/NACK session |
+| erase fora do manifest | DM15 failed |
+| RTS inesperado/tamanho errado | TP.ABORT resources |
+| sequência TP errada | ABORT/falha DM |
+| timeout TP | ABORT timeout + DM15 failed |
+| write Flash falha | metadata invalid, WAIT_HOST, DM15 failed |
+| CRC/vetor falha | metadata invalid, NACK, WAIT_HOST |
+| timeout update | invalid/clear + NACK timeout |
+| ACK não drena em 250 ms | jump/reset ainda ocorre |
+| queda de energia | metadata não VALID; requer reenvio integral da imagem |
+| config rasgada | slot ignorado; geração válida anterior/default |
 
-Também procura em `$HOME/apps/stm32cubeide/...`; se não encontrar, usa os
-executáveis `arm-none-eabi-*` do `PATH`. É possível sobrescrever
-`STM32_GNU_BIN` ou `TOOLCHAIN_PREFIX` explicitamente.
+O sistema prioriza não executar conteúdo parcial. Ele não promete preservar a
+imagem anterior.
 
-Essa autodetecção vale para o compilador, não para
-`STM32_Programmer_CLI`. No macOS, instale o STM32CubeProgrammer separadamente,
-adicione sua pasta ao `PATH` ou invoque o executável contido no bundle/plugin do
-STM32CubeIDE por caminho absoluto.
+## 25. Build e artefatos
 
-### 18.2 Flags principais
-
-Bootloader:
-
-```text
--mcpu=cortex-m3 -mthumb -mfloat-abi=soft
--std=gnu11 -Os -g3
--ffunction-sections -fdata-sections -Wall -Wextra
--DUSE_HAL_DRIVER -DSTM32F103xB
---specs=nosys.specs --specs=nano.specs
--Wl,--gc-sections -static
-```
-
-Aplicação de teste:
-
-```text
--mcpu=cortex-m3 -mthumb
--std=c11 -Os -g3 -ffreestanding -fno-builtin
--ffunction-sections -fdata-sections
--Wall -Wextra -Werror -nostdlib
-```
-
-### 18.3 Comandos
-
-Na raiz:
+O build requer GNU Make e GNU Arm Embedded Toolchain. O Makefile procura
+automaticamente o toolchain incluído no STM32CubeIDE no macOS e, se não o
+encontrar, usa `arm-none-eabi-*` do `PATH`; `STM32_GNU_BIN` ou
+`TOOLCHAIN_PREFIX` podem sobrescrever essa descoberta. Os testes host requerem
+Python 3.10 ou mais novo com o extra `test` instalado no ambiente virtual.
 
 ```sh
 make bootloader
 make test-application
-make test
-```
-
-Quality gate completo a partir de estado limpo:
-
-```sh
-make clean
-make all
+make test-c
+make test-python PYTHON=.venv/bin/python
 make test PYTHON=.venv/bin/python
 ```
 
-Alvos disponíveis:
-
-| Alvo | Resultado |
-|---|---|
-| `make bootloader` | compila bootloader |
-| `make test-application` | compila aplicação relocada |
-| `make all` | ambos os firmwares |
-| `make test-c` | testes nativos C |
-| `make test-python` | pytest da ferramenta host |
-| `make test` | testes C e Python |
-| `make clean` | remove somente os artefatos gerados pelos Makefiles |
-
-### 18.4 Artefatos
-
-Bootloader:
+Artefatos:
 
 ```text
 build/bootloader/CanLoader.elf
@@ -1504,469 +1172,235 @@ build/bootloader/CanLoader.bin
 build/bootloader/CanLoader.hex
 build/bootloader/CanLoader.map
 build/bootloader/CanLoader.list
+TestApplication/build/canloader_test_app.{elf,bin,hex,map}
 ```
 
-Aplicação:
-
-```text
-TestApplication/build/canloader_test_app.elf
-TestApplication/build/canloader_test_app.bin
-TestApplication/build/canloader_test_app.hex
-TestApplication/build/canloader_test_app.map
-```
-
-O `.bin` do bootloader contém somente suas seções linkadas; a página de device
-config não faz parte do arquivo. Gravar isoladamente esse `.bin` não altera um
-node já persistido. A página estará apagada/default somente em MCU virgem, após
-mass erase ou se for apagada explicitamente.
-
-No quality gate de 18 de agosto de 2026, com GNU Tools for STM32 14.3.1, os
-artefatos apresentaram:
-
-| Imagem | text | data | bss | `.bin` | Limite de Flash aplicável |
-|---|---:|---:|---:|---:|---:|
-| bootloader | 10716 | 12 | 1304 | 10728 bytes | 15360 bytes |
-| aplicação de teste | 1596 | 4 | 1044 | 1600 bytes | 48128 bytes |
-
-Identificadores exatos dessa geração:
-
-| Item | Identificador SHA-256/estado |
-|---|---|
-| base Git | `34f933d91207`; a implementação multi-node estava no worktree ainda não commitado |
-| `CanLoader.bin` | `1d2df5cac686e0c319fa3b7c433e14f35f00d7269408c233a92a2931aebeced3` |
-| `canloader_test_app.bin` | `66761a1c42eff7182d246cfebd48f8a4d5150ca31a819f2e3484c67900638ee2` |
-
-Esses números são um snapshot de rastreabilidade, não constantes do protocolo;
-podem mudar com compilador ou código. Os limites impostos pelos linkers é que
-são normativos. Para uma release reproduzível, as alterações devem ser
-commitadas/tagueadas e os hashes regenerados a partir desse commit limpo.
-
----
-
-## 19. Gravação inicial e primeiro update
-
-### 19.1 Gravação por SWD
-
-O mass erase abaixo é destrutivo para todo o target e deve ser usado somente
-quando essa limpeza é desejada:
-
-```sh
-STM32_Programmer_CLI -c port=SWD -e all
-STM32_Programmer_CLI \
-  -c port=SWD \
-  -w build/bootloader/CanLoader.bin 0x08000000 \
-  -v -rst
-```
-
-Para a ligação ST-LINK, mantenha BOOT0 baixo e conecte ao menos SWDIO/PA13,
-SWCLK/PA14, GND comum e referência/alimentação compatível; NRST é recomendado
-quando disponível. Confirme o MCU físico antes de executar `-e all`.
-
-Depois do reset, como metadata e configuração estão apagadas:
-
-- node efetivo é 1;
-- aplicação é inválida;
-- estado é `WAIT_HOST`;
-- LED alterna a cada 500 ms.
-
-### 19.2 Consulta inicial no macOS
-
-```sh
-CAN_BITRATE=500000 python -m canloader info \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX \
-  --node 1 \
-  --verbose
-```
-
-Valores esperados para Flash apagada:
-
-```text
-Protocol version: 1
-Node: 1
-Capabilities: 0xF1010100
-Application base: 0x08004000
-Application maximum size: 48128 bytes
-Stored image size: 0 bytes
-Stored image CRC: 0x00000000
-Device UID: <24 dígitos hexadecimais>
-```
-
-### 19.3 Primeiro update
-
-```sh
-CAN_BITRATE=500000 python -m canloader update \
-  TestApplication/build/canloader_test_app.bin \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX \
-  --node 1 \
-  --run \
-  --verbose
-```
-
-O fluxo esperado é transferência, `FINISH`, `VERIFY`, ACK de execução e padrão
-de duas piscadas da aplicação.
-
-### 19.4 Retorno ao bootloader
-
-```sh
-CAN_BITRATE=500000 python -m canloader reboot \
-  --interface slcan \
-  --channel /dev/cu.usbmodemXXXX \
-  --node 1
-```
-
-A aplicação deve responder, resetar e o bootloader deve permanecer disponível
-por 10 s se ninguém o capturar. A própria CLI envia `DISCOVER` para confirmar a
-transição; o ACK desse comando captura `BOOT_WINDOW` e muda para `WAIT_HOST`.
-Depois de um `reboot` confirmado, portanto, o bootloader aguarda indefinidamente
-até receber `run`, update, ABORT/reset ou outro comando que mude seu estado. A
-confirmação de `set-node` produz o mesmo efeito no endereço novo.
-
----
-
-## 20. Tratamento de falhas
-
-| Falha | Comportamento atual |
-|---|---|
-| Flash física menor que 64 KiB | inicialização entra em `ERROR` |
-| `HAL_CAN_Init()` falha em `MX_CAN_Init()` | entra no `Error_Handler()` anterior à máquina e permanece parado |
-| filtro CAN ou `boot_can_start()` falha em `bootloader_init()` | entra em `ERROR`, LED rápido |
-| bus-off durante operação | port retorna `BUS_OFF`; não há transição/reinit explícita; ABOM do periférico tenta recuperação |
-| metadata vazia/corrompida | aplicação considerada inválida; `WAIT_HOST` |
-| config do node corrompida | fallback node 1 |
-| tamanho fora de 8..48128 | NACK `INVALID_SIZE` |
-| sessão zero em `START_UPDATE` ou sessão divergente em comando/DATA da transferência | NACK `SESSION` |
-| bloco/frame fora de ordem | NACK `INVALID_SEQUENCE` |
-| erase falha | metadata inválida quando possível; NACK `FLASH_ERASE` |
-| preparação da metadata falha | retorna `FLASH_ERASE` ao protocolo mesmo se a causa interna foi programação/readback |
-| programação/readback falha | metadata inválida quando possível; NACK `FLASH_WRITE` |
-| CRC final diferente | metadata inválida; NACK `CRC_MISMATCH` |
-| vetores inválidos | metadata inválida; NACK `INVALID_APPLICATION` |
-| inatividade de 5 s | aborta sessão, NACK assíncrono `TIMEOUT` |
-| reset/perda de energia durante update | estado persistente não permite jump; aguarda recuperação |
-| ACK de RUN não sai em 250 ms | jump é forçado; host pode observar timeout |
-| ACK de SET_NODE não sai em 250 ms | reset é forçado; host pode precisar localizar o node novo com `ls` |
-
-O port atual não possui watchdog de software, fila de múltiplas respostas,
-retomada persistente de offset nem recuperação de uma sessão após reset.
-
-IWDG e WWDG não são inicializados nem alimentados pelo bootloader. Fault
-handlers, handler default e `Error_Handler()` anteriores à inicialização da
-máquina permanecem em laço infinito. Se uma aplicação iniciar o IWDG e fizer um
-reset que não o desative, o bootloader precisa ser adaptado para alimentá-lo;
-esse watchdog não pode ser desligado livremente por software no STM32F1.
-
-O padrão de LED de `ERROR` existe somente para falhas detectadas depois que
-`bootloader_init()` controla o contexto. Uma falha de HSE/clock ou HAL anterior
-entra no `Error_Handler()` do código CubeMX, desabilita IRQs e fica parada, sem
-o padrão de diagnóstico da máquina.
-
-As rotinas de erase/programação executam a partir do mesmo banco de Flash e são
-síncronas; não existe cópia de rotina para RAM. Durante essas operações o laço
-não atende novos frames. A adequação dos timeouts depende, portanto, do tempo
-real de Flash e da carga do barramento.
-
----
-
-## 21. Testes e critérios de aceitação
-
-### 21.1 Testes C nativos
-
-Cobrem, entre outros:
-
-- vetor conhecido do CRC e helpers LE;
-- decodificação e rejeição de frames de controle/bloco/DATA;
-- geração dinâmica de IDs de resposta;
-- limites de imagem, bloco, sequência e sessão;
-- duplicatas idempotentes;
-- timeout e invalidação de update parcial;
-- comportamento da boot window diante de ruído/broadcast proibido;
-- falhas de metadata/erase;
-- handoff forçado quando ACK não pode sair;
-- node dinâmico, PROBE, UID e reconfiguração;
-- janela de 10 s solicitada pela aplicação;
-- `ENTER_BOOTLOADER` idempotente;
-- layout, CRC e transições da metadata;
-- persistência/fallback da configuração do node;
-- vetores, CRC e validação integral da imagem.
-
-### 21.2 Testes Python
-
-Cobrem:
-
-- IDs e serialização little-endian;
-- broadcast PROBE e extração do node pelo response ID;
-- limites de node, payload, bloco e resposta;
-- CRC conhecido;
-- mapeamento de NACKs;
-- adaptação `python-can`;
-- retry após timeout;
-- descarte de respostas alheias/atrasadas;
-- sessões distintas em consultas INFO;
-- `set-node` e `enter-bootloader` com ACK exato;
-- scan de múltiplos nodes e UIDs;
-- timeout assíncrono do dispositivo;
-- perda do ACK de bloco e recuperação idempotente;
-- tamanho de bloco negociado;
-- fluxo completo de update/progresso/verify;
-- ABORT best-effort após falha;
-- parsing de todos os subcomandos da CLI.
-
-### 21.3 Validação em hardware
-
-Os testes automatizados não exercitam transceptor, terminação, ruído, Flash
-física, timing real, perda de alimentação nem múltiplos nodes reais. A campanha
-obrigatória está dividida em A–J em [`VALIDATION.md`](VALIDATION.md):
-
-| Sessão | Objetivo |
-|---|---|
-| A | permanência no bootloader sem aplicação |
-| B | CAN, INFO, IDs e mapa |
-| C | update completo |
-| D | igualdade do CRC host/target |
-| E | ACK e handoff |
-| F | autoboot após 1500 ms |
-| G | interrupção de update e proibição de imagem parcial |
-| H | recuperação por novo update |
-| I | descoberta da aplicação e reboot remoto |
-| J | persistência/reendereçamento do node |
-
-Somente resultados observados no MCU devem ser registrados como aprovados.
-
-No quality gate de 18 de agosto de 2026, os três executáveis C retornaram `OK`
-e o pytest retornou `31 passed`. Esse registro comprova a execução das
-verificações lógicas naquela revisão, mas não altera o estado pendente da
-validação física A–J.
-
-Não há workflow de CI, relatório de cobertura ou configuração de análise
-estática (`clang-tidy`, `mypy`, `ruff` etc.) no repositório atual. Os gates
-automatizados disponíveis são os Makefiles e as suítes locais descritas acima.
-
-### 21.4 Matriz de rastreabilidade consolidada
-
-Esta matriz liga as famílias de requisitos da seção 3 às principais fontes de
-implementação, evidências automatizadas e sessões de bancada. “Aprovado” na
-coluna lógica significa que o quality gate descrito acima passou; não substitui
-a validação física indicada na última coluna.
-
-| Requisitos | Implementação principal | Evidência automatizada | Validação física relacionada | Estado atual |
-|---|---|---|---|---|
-| `HW-01`..`HW-09` | `Config/`, `Core/`, `Portable/stm32f1/`, startup e linkers | cross-build do bootloader e da aplicação; testes dos ports simulados | preparação, A, B, E e F | build aprovado; elétrica/MCU pendentes |
-| `RF-01`..`RF-11` | `bootloader.c`, `boot_metadata.c`, `boot_image.c` e LED do port | `test_bootloader`, `test_metadata_image` e testes de fluxo Python | A..I | lógica aprovada; bancada pendente |
-| `MULTI-01`..`MULTI-08` | `boot_device_config.c`, PROBE/IDs no protocolo, aplicação de referência e scanner Python | cenários multinó em C e Python | I e J, incluindo ensaio com mais de um node | lógica aprovada; rede real pendente |
-| `ROB-01`..`ROB-12` | máquina de estados, Flash/metadata, validação de imagem e retries do cliente | três suítes C; testes Python de retry, duplicata, timeout, ABORT e ACK perdido | C..H | lógica aprovada; falha física/energia pendente |
-| `PROTO-01`..`PROTO-05` | `Protocol/` e adaptador CAN do target | `test_protocol` e testes de serialização Python | B..E | wire format aprovado logicamente; CAN real pendente |
-| `HOST-01`..`HOST-05` | `Tools/canloader/pyproject.toml` e pacote `canloader` | 31 testes pytest e parsing de todos os subcomandos | B..E e I..J | suíte aprovada; adaptador/barramento pendentes |
-| `BUILD-01`..`BUILD-07` | Makefiles, linkers, startup e projeto CubeMX | `make clean`, `make all` e `make test` | preparação e registro A..J | build/teste local aprovados; campanha pendente |
-
----
-
-## 22. Limitações e requisitos não atendidos
-
-### 22.1 Segurança
-
-A versão atual **não é secure boot**. Não existem:
-
-- assinatura digital;
-- chave pública/privada ou cadeia de confiança;
-- autenticação do host;
-- MAC de mensagens;
-- criptografia do firmware ou do barramento;
-- autorização por node/UID;
-- anti-rollback ou contador monotônico;
-- proteção contra replay de uma imagem válida;
-- versão de imagem funcional; `image_version` permanece zero.
-
-Qualquer participante capaz de transmitir no barramento pode iniciar update de
-um node conhecido e fornecer CRC coerente. A proteção implementada é contra
-corrupção acidental e escrita fora da partição, não contra um atacante.
-
-### 22.2 Disponibilidade e rollback
-
-- apenas um slot de aplicação;
-- sem conservação da imagem anterior após erase;
-- sem retomada depois de reset;
-- sem update paralelo no mesmo node;
-- uma única sessão e um bloco ativo;
-- sem janela dinâmica de fluxo ou ACK por frame DATA; existe um ACK no commit de cada bloco;
-- sem wear leveling ou contagem de ciclos de Flash;
-- sem watchdog de atualização;
-- sem caracterização de carga máxima do barramento.
-
-O linker reserva no mínimo 1 KiB para a stack do bootloader, mas essa reserva é
-somente uma verificação de layout no link. Não existe análise estática de pior
-caso, medição de *high-water mark*, canário de stack ou evidência de margem sob
-o pior aninhamento de interrupções. O consumo máximo de stack deve ser medido no
-target antes de uma liberação de produção.
-
-### 22.3 Rede
-
-- CAN clássico somente;
-- IDs padrão de 11 bits somente;
-- bitrate fixo em 500 kbit/s;
-- sem CAN FD/BRS;
-- sem J1939 real, PGNs, DM14/DM15/DM16 ou TP;
-- sem address claiming;
-- sem atraso aleatório para respostas de scan;
-- nodes duplicados não podem ser distinguidos;
-- cenário multinó ainda requer validação elétrica/temporal real.
-
-Os estados `RUN_APPLICATION` e `RESET` não bloqueiam o parser durante a espera
-de 50–250 ms. Tráfego concorrente válido nesse intervalo pode mudar novamente o
-estado e cancelar o jump/reset originalmente esperado. A CLI normal serializa
-os pedidos, mas isso deve ser considerado em redes com mais de um controlador.
-
-### 22.4 Compatibilidade de imagem
-
-O `.bin` não possui manifesto com MCU, origem, versão ou assinatura. A CLI
-confere somente tamanho contra o target e o CRC resultante. É responsabilidade
-do processo de release garantir que o arquivo foi linkado para o
-STM32F103C8Tx, em `0x08004000`, e que sua aplicação implementa o contrato correto.
-
-### 22.5 Proteção física do bootloader
-
-O protocolo não expõe a região do código do bootloader, mas a implementação não
-configura option bytes de write protection/readout protection. SWD, mass erase
-ou código local privilegiado ainda podem alterar o bootloader e sua configuração.
-
----
-
-## 23. Portabilidade para outro MCU
-
-A máquina de estados, CRC, layouts de protocolo, metadata e cliente host são
-reutilizáveis, mas portar exige um target completo:
-
-1. criar projeto, startup, CMSIS/HAL e flags do novo core;
-2. redefinir Flash/SRAM, origem da aplicação e páginas persistentes;
-3. criar linker do bootloader e da aplicação com asserções equivalentes;
-4. escolher unidade mínima real de programação;
-5. revisar os formatos persistentes e seus paddings para que toda escrita seja
-   múltipla dessa unidade;
-6. escolher tamanho de bloco divisível por essa unidade;
-7. implementar `boot_can_*` para o periférico do target;
-8. implementar `boot_flash_*` com região, alinhamento, erase e readback;
-9. implementar tick, UID, pedido de boot, reset e handoff em
-   `boot_platform_*`;
-10. atribuir novo `BOOT_TARGET_CODE`;
-11. compilar e repetir testes lógicos e campanha de hardware.
-
-Em particular, o registro atual de configuração possui 12 bytes. Em um MCU com
-unidade mínima de programação de 8 bytes, `boot_device_config_store_node()`
-precisa gravar um formato/padding alinhado, por exemplo 16 bytes; apenas alterar
-`BOOT_FLASH_PROGRAM_UNIT` faria a escrita de 12 bytes falhar no port de Flash.
-
-Para um STM32G0, isso inclui FDCAN, nova geometria de Flash, startup Cortex-M0+
-e novo handoff. Trocar somente um `#define` não constitui um port. Se o wire
-format mudar para CAN FD, IDs de 29 bits ou payload maior, deve ser criada nova
-versão de protocolo.
-
----
-
-## 24. Checklist de implementação e liberação
-
-### 24.1 Bootloader
-
-- [ ] target e HSE correspondem ao projeto;
-- [ ] código cabe nos 15 KiB definidos pelo linker;
-- [ ] build gera BIN/HEX/ELF/MAP sem erro;
-- [ ] configuração e metadata não recebem seções acidentalmente;
-- [ ] testes C e Python passam em estado limpo;
-- [ ] binário inicial é verificado por SWD.
-
-### 24.2 Aplicação
-
-- [ ] linkada em `0x08004000`;
-- [ ] tamanho menor ou igual a 48128;
-- [ ] VTOR configurado corretamente;
-- [ ] MSP e Reset Handler válidos;
-- [ ] não ocupa metadata/configuração;
-- [ ] responde `PROBE` com node/UID/capabilities;
-- [ ] aceita `ENTER_BOOTLOADER` por unicast;
-- [ ] grava as duas magias BKP e reseta após o ACK;
-- [ ] firmware enviado é exatamente o `.bin` usado para calcular o CRC.
-
-### 24.3 Rede e provisionamento
-
-- [ ] transceptor adequado em cada MCU;
-- [ ] GND comum;
-- [ ] duas terminações de 120 Ω, somente nas extremidades;
-- [ ] adaptador configurado em 500 kbit/s;
-- [ ] unicidade de node assegurada durante provisionamento com placas isoladas;
-- [ ] UID registrado junto ao node/endereço físico;
-- [ ] inventário `node ↔ UID` de `canloader ls` coincide com o registro de provisionamento;
-- [ ] as três words de UID foram coletadas para cada node esperado;
-- [ ] update de um node não altera os demais.
-
-### 24.4 Evidência de validação
-
-- [ ] saída do quality gate arquivada;
-- [ ] versões das ferramentas registradas;
-- [ ] hash/CRC dos artefatos registrados;
-- [ ] campanha A–J executada;
-- [ ] interrupção de energia/reset testada durante update;
-- [ ] handoff e padrão de LED observados;
-- [ ] teste real com mais de um node executado;
-- [ ] limitações de segurança aceitas pelo contexto de uso.
-
----
-
-## 25. Glossário e convenções
-
-### 25.1 Siglas
+Flags centrais: Cortex-M3/Thumb/soft-float, GNU C11, `-Os`, function/data sections,
+`--gc-sections`, nano/newlib e `-Wall -Wextra`. Testes C usam `-Wpedantic
+-Werror`; aplicação de teste é freestanding/nostdlib.
+
+O linker faz asserts de origem/fim e reserva stack. A configuração CubeIDE deve
+usar os mesmos sources/includes/linker; regeneração CubeMX exige revisão das
+seções USER CODE.
+
+### 25.1 Primeira colocação em serviço
+
+Uma sequência segura e reproduzível é:
+
+1. registrar commit, versão do compilador e resultado de `size`;
+2. apagar a Flash completa por SWD e gravar `CanLoader.bin` em `0x08000000`;
+3. conferir BOOT0 baixo, alimentação, transceptor, GND e terminação;
+4. energizar sem aplicação e confirmar que o target permanece em WAIT_HOST;
+5. executar `canloader ls` e arquivar NAME/SA observado;
+6. executar `info` e exigir protocolo 2, base `0x08005000`, máximo 44032 e UID
+   esperado;
+7. atualizar o binário relocável da aplicação, verificar CRC e executar;
+8. na aplicação, repetir `ls/info`, chamar `reboot` e confirmar o mesmo NAME no
+   bootloader;
+9. manter o ST-LINK conectado/disponível até concluir os ensaios de recuperação.
+
+O arquivo enviado deve ser o `.bin` bruto da aplicação, não o ELF/HEX e nunca
+o binário do bootloader. Antes do envio, `arm-none-eabi-size` e o `.map` da
+aplicação devem provar que a imagem inicia em `0x08005000` e termina antes da
+metadata.
+
+## 26. Testes automatizados
+
+Seis executáveis C cobrem:
+
+- CRC, endianess, IDs e payloads;
+- Address Claim/Request/arbitragem/Cannot Claim;
+- TP duas janelas, sequência, timeout, frames alheios e BAM;
+- defaults/journal/registro rasgado/compactação;
+- FSM, ownership e bloco TP completo;
+- metadata, markers, bounds, CRC e vetores.
+
+A suíte Python cobre:
+
+- PDU1/PDU2, NAME e frames extended;
+- claim do Tool e AddressBook com conflitos;
+- codecs Proprietary A/DM;
+- RTS/CTS/BAM/ABORT;
+- scanner e identity lock;
+- update completo, bloco curto e retry por EOM perdido;
+- reboot da aplicação e Commanded Address;
+- CLI v2 e ausência das opções de endereçamento legadas;
+- backends SocketCAN/SLCAN.
+
+Mocks não validam física, arbitragem real, bus-off, energia ou endurance. A
+campanha em hardware está em [VALIDATION.md](VALIDATION.md).
+
+### 26.1 Matriz mínima de validação HIL
+
+Os testes abaixo devem gerar log `--verbose`, captura CAN com IDs de 29 bits e
+resultado observado. "Aprovado" só pode ser marcado depois da execução física:
+
+| ID | Ensaio | Critério de aceitação |
+|---|---|---|
+| A | power-on sem metadata válida | permanece descobrível; não salta |
+| B | power-on com imagem válida | claim, janela de 1,5 s e handoff correto |
+| C | Request/Address Claimed | `ls` associa NAME, SA e IDENTIFY v2 |
+| D | dois targets preferindo `0x80` | menor NAME vence; outro escolhe fallback |
+| E | Commanded Address + power cycle | mesmo NAME reaparece no SA persistido |
+| F | update com dois ECUs ativos | somente o NAME/DA bloqueado altera Flash |
+| G | blocos finais de 1..7 e 8 bytes | DM16 direto e transição para TP corretos |
+| H | bloco de 100 bytes | CTS em janelas 8+7; EOM antes de DM15 |
+| I | perda/duplicação de ACK, DM15 e EOM | retries documentados convergem sem commit duplicado |
+| J | TP fora de ordem ou incompleto | ABORT/FAILED e nenhuma gravação parcial do bloco |
+| K | CRC incorreto e vetores inválidos | metadata não fica VALID; jump recusado |
+| L | corte de energia antes/durante/depois de erase/write/finalize | nunca executa imagem parcial; aceita update integral novo |
+| M | ENTER_BOOTLOADER pela aplicação | ACK, reset, assinatura one-shot e janela de 10 s |
+| N | carga, desconexão e bus-off | comportamento e tempo de recuperação registrados |
+
+Para o caso F, a evidência precisa registrar os dois NAMEs, seus SAs antes e
+depois, CRC/versão de ambas as aplicações e todo PGN dirigido. Para o caso L,
+o corte deve variar dentro da operação; desligar apenas entre comandos não testa
+o compromisso transacional de metadata/journal. A perda de todas as cópias do
+close DM14 deve ser ensaiada separadamente e confirmar a limitação conhecida:
+INVALID_SEQUENCE e reinício do update, sem execução de imagem parcial.
+
+## 27. Segurança e limitações
+
+Proteções presentes:
+
+- partições rígidas;
+- validação de overflow/alinhamento;
+- ownership/sessão não criptográficos;
+- CRC e readback;
+- metadata fail-safe contra execução parcial;
+- vetores e Thumb/MSP;
+- update dirigido.
+
+Ausentes: assinatura, autenticação, confidencialidade, anti-replay,
+anti-rollback, slot redundante, WRP/RDP gerenciados, watchdog/brown-out
+qualificados e NAME de produção. Veja [LIMITATIONS.md](LIMITATIONS.md).
+
+O identity lock do host evita erro operacional por troca de SA ou disputa
+observada, mas não autentica criptograficamente o target. No firmware, o owner
+da sessão é apenas `(Source Address, session byte)`; NAME do Tool não integra a
+autorização. Qualquer participante com acesso ao barramento pode forjar esses
+campos, enviar Commanded Address ou instalar uma imagem com CRC recalculado.
+Assim, o estado atual é apropriado para bancada/rede confiável, não para uma
+fronteira de segurança de produção.
+
+## 28. Portabilidade
+
+Um port futuro precisa definir:
+
+- MCU/clock/startup/HAL/CMSIS;
+- mapa e linkers da aplicação/metadata/config;
+- geometria real de Flash;
+- driver CAN/FDCAN no modo clássico de 29 bits;
+- filtros para DA local/global;
+- tick, UID, persistência, backup request e handoff;
+- aplicação relocada;
+- testes de Flash, reset e rede.
+
+Se a unidade de programação não for 2 bytes, o bloco de 100 deve ser revisto ou
+o port deve implementar padding seguro. CAN FD/ETP/A-B/secure boot podem exigir
+uma nova versão, não apenas recompilação.
+
+## 29. Rastreabilidade resumida
+
+| Grupo | Código principal | Teste principal | Validação física |
+|---|---|---|---|
+| HW | port STM32F1/Core | build | bancada elétrica |
+| BOOT | `bootloader`, `boot_image` | bootloader/metadata | autoboot/handoff |
+| NET | J1939 claim/config | claim/config Python+C | multinó/Commanded Address |
+| PROTO | J1939/TP/protocol | protocol/TP Python+C | captura 29-bit/TP |
+| UPD | bootloader/client | full update mocks | update/interrupção |
+| PERS | metadata/config | torn-write/markers | power cut/journal |
+| HOST | pacote `canloader` | client/CLI/bus | SLCAN + SocketCAN |
+| QUAL | Makefiles/docs | `make test` | relatório A–N |
+
+## 30. Checklist de liberação
+
+### Firmware
+
+- [ ] versão 2 e sem símbolos/IDs v1 ativos;
+- [ ] mapa `19K+1K+43K+1K` coerente;
+- [ ] `text+data <= 19456` e RAM/stack dentro de 20 KiB;
+- [ ] todos os seis testes C executados;
+- [ ] metadata e journal testados com torn writes;
+- [ ] filtros extended/local/global conferidos;
+- [ ] NAME de produção provisionado ou exceção de laboratório registrada.
+
+### Aplicação
+
+- [ ] `.isr_vector=0x08005000`;
+- [ ] tamanho ≤44032;
+- [ ] mesmo NAME/SA e Address Claim;
+- [ ] IDENTIFY/INFO/ENTER implementados;
+- [ ] backup request one-shot testado;
+- [ ] handoff com IRQs restauradas.
+
+### Host/rede
+
+- [ ] Python 3.10+ e pacote v2 instalado;
+- [ ] adaptador transmite extended IDs;
+- [ ] Tool possui NAME/SA sem conflito;
+- [ ] operações mutáveis usam `--name`;
+- [ ] TP duas janelas observado;
+- [ ] update de um NAME não altera o outro;
+- [ ] recuperação por ST-LINK disponível.
+
+### Evidência
+
+- [ ] commit, toolchain e hashes registrados;
+- [ ] build/size/map arquivados;
+- [ ] pytest/testes C aprovados;
+- [ ] captura e logs `--verbose` arquivados;
+- [ ] sessão A–N preenchida;
+- [ ] limitações de segurança e conformidade presentes no TCC.
+
+## 31. Glossário e convenções
 
 | Termo | Significado neste projeto |
 |---|---|
-| ACK | *Acknowledgement*: resposta positiva que confirma o comando e sua sessão. |
-| ABOM | *Automatic Bus-Off Management*: recuperação automática de bus-off do bxCAN. |
-| BKP | Domínio/registradores de backup do STM32; `DR1` e `DR2` transportam a solicitação de boot através de um reset de sistema. |
-| CAN | *Controller Area Network* clássico usado como transporte do protocolo. |
-| CRC | *Cyclic Redundancy Check*; aqui, CRC-32/ISO-HDLC da imagem. |
-| DLC | *Data Length Code*: quantidade de bytes de dados do frame CAN. |
-| FPEC | *Flash Program/Erase Controller*: controlador de programação e erase da Flash do STM32F1. |
-| HSE | *High-Speed External*: oscilador externo de 8 MHz usado pelo bootloader. |
-| HSI | *High-Speed Internal*: oscilador interno usado pela aplicação de referência. |
-| MSP | *Main Stack Pointer*: primeiro vetor da aplicação e stack inicial do Cortex-M3. |
-| NACK | *Negative Acknowledgement*: resposta de rejeição acompanhada por código de erro. |
-| SLCAN | Protocolo serial ASCII, no estilo LAWICEL, usado entre o macOS e certos adaptadores USB-CAN. |
-| SWD | *Serial Wire Debug*: interface usada na gravação inicial e depuração. |
-| TQ | *Time Quantum*: unidade elementar que compõe o tempo de um bit CAN. |
-| UID | Identificador físico de 96 bits gravado de fábrica no STM32. |
-| VTOR | *Vector Table Offset Register*: registrador que aponta para a tabela de vetores ativa. |
+| CA/ECU | aplicação controladora participante da rede |
+| CEFF | Classical Extended Frame Format, CAN clássico com ID de 29 bits |
+| NAME | identidade J1939 de 64 bits usada na disputa e no lock do host |
+| preferred SA | endereço que a ECU tenta reivindicar primeiro |
+| SA/DA | Source Address/Destination Address de um frame PDU1 |
+| PGN | Parameter Group Number canônico; em PDU1 o byte DA não o integra |
+| PDU1/PDU2 | formato dirigido (`PF<0xF0`) / formato global por Group Extension |
+| TP.CM/TP.DT | controle e dados do Transport Protocol clássico |
+| RTS/CTS | transferência TP dirigida com controle de fluxo |
+| BAM | transferência TP global sem ACK/flow control |
+| DM14/15/16 | request, response e dados do subset de acesso à memória |
+| metadata | registro transacional que autoriza ou impede executar a imagem |
+| journal | registros append-only de NAME/preferred SA na página de config |
+| owner | SA do Tool que iniciou a sessão mutável atual |
+| identity lock | conferência host de que o NAME esperado continua no SA usado |
+| HIL | teste hardware-in-the-loop em placa e barramento físicos |
 
-### 25.2 Termos e unidades
+Inteiros multibyte dos payloads CanLoader são little-endian. Valores de
+endereço e PGN são escritos em hexadecimal; tamanhos e tempos usam bytes e
+milissegundos, salvo indicação contrária. `Tool` significa a ferramenta de
+serviço no computador; `target` significa a Blue Pill em bootloader ou
+aplicação de referência.
 
-| Termo | Convenção adotada |
-|---|---|
-| aplicação | Firmware atualizável, armazenado a partir de `0x08004000`. |
-| bootloader | Firmware residente que valida, recebe e executa a aplicação. |
-| default | Valor de fallback; para o node ID, é 1. |
-| erase | Apagamento de uma ou mais páginas de Flash para o estado `0xFF`. |
-| handoff | Sequência de desativação do bootloader e transferência de controle para a aplicação. |
-| host | Computador/controlador que executa a ferramenta `canloader`. |
-| marker | Campo persistente que representa `UPDATING`, `VALID` ou `INVALID`. |
-| metadata | Registro persistente de tamanho, CRC, versão, marker e checksum da imagem. |
-| node | Endereço lógico CAN de 1 a 127; não é sinônimo de UID. |
-| readback | Releitura após erase/programação para confirmar o conteúdo físico gravado. |
-| target | Combinação concreta de MCU, memória, clock, periféricos e port; aqui, STM32F103C8Tx. |
-| word | Palavra de 32 bits, salvo indicação explícita; *halfword* significa 16 bits. |
-| KiB | 1024 bytes. Tamanhos de memória usam base binária. |
+## 32. Referências internas
 
----
+- [PROTOCOL.md](PROTOCOL.md): contrato on-wire byte a byte;
+- [MEMORY_MAP.md](MEMORY_MAP.md): partições e formatos persistentes;
+- [ARCHITECTURE.md](ARCHITECTURE.md): módulos e fluxos;
+- [MIGRATION_V1_TO_V2.md](MIGRATION_V1_TO_V2.md): mudança incompatível;
+- [VALIDATION.md](VALIDATION.md): campanha de teste;
+- [LIMITATIONS.md](LIMITATIONS.md): riscos e fronteiras;
+- [TCC_DIVERGENCES.md](TCC_DIVERGENCES.md): redação acadêmica e aderência.
 
-## 26. Referências internas
+## 33. Referências externas
 
-- [`README.md`](../README.md): visão geral e quick start;
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): arquitetura e portabilidade;
-- [`MEMORY_MAP.md`](MEMORY_MAP.md): mapa e formatos persistentes;
-- [`PROTOCOL.md`](PROTOCOL.md): especificação isolada do wire protocol;
-- [`VALIDATION.md`](VALIDATION.md): campanha integrada A–J;
-- [`LIMITATIONS.md`](LIMITATIONS.md): limitações conhecidas;
-- [`TCC_DIVERGENCES.md`](TCC_DIVERGENCES.md): delimitação em relação ao TCC;
-- [`Tools/canloader/README.md`](../Tools/canloader/README.md): uso da ferramenta;
-- [`TestApplication/README.md`](../TestApplication/README.md): aplicação de
-  referência.
+- [SAE J1939/21_202205 — Data Link Layer](https://saemobilus.sae.org/standards/j193921_202205-data-link-layer)
+- [SAE J1939/81_202504 — Network Management](https://saemobilus.sae.org/standards/j193981_202504-network-management)
+- [SAE J1939/73_202412 — Application Layer Diagnostics](https://saemobilus.sae.org/standards/j193973_202412-application-layer-diagnostics)
+- [SAE J1939 Digital Annex](https://saemobilus.sae.org/standards/j1939da_202607-j1939-digital-annex)
+- [Documentação J1939 do kernel Linux](https://docs.kernel.org/networking/j1939.html)
+- [Header UAPI J1939 do Linux](https://github.com/torvalds/linux/blob/master/include/uapi/linux/can/j1939.h)
+- [TP J1939 do Linux](https://github.com/torvalds/linux/blob/master/net/can/j1939/transport.c)
+- [Address Claim do Linux](https://github.com/torvalds/linux/blob/master/net/can/j1939/address-claim.c)
+- [can-utils](https://github.com/linux-can/can-utils)
+- [Revisão pública histórica J1939-73 arquivada pela UNECE](https://unece.org/fileadmin/DAM/trans/doc/2006/wp29/WP29-140-06e.pdf)
 
-Este arquivo deve ser atualizado sempre que houver mudança de versão do
-protocolo, mapa de memória, formato persistente, target, unidade de programação,
-timing CAN, comandos, contrato da aplicação ou critérios de validação.
+A revisão pública histórica não substitui a edição SAE atual licenciada.

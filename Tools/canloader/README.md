@@ -1,67 +1,119 @@
-# CanLoader host tool
+# Ferramenta host CanLoader
 
-Python 3.10+ updater for the CanLoader protocol. The command-line interface
-uses `python-can`; its protocol/client layers accept an injected bus and can be
-tested without CAN hardware.
+Cliente Python 3.10+ exclusivo do protocolo CanLoader v2 sobre J1939. A CLI
+usa `python-can`; as camadas de protocolo aceitam um barramento injetado e são
+testadas sem hardware CAN.
 
-## Install
+## Instalação
 
 ```bash
 python -m pip install -e Tools/canloader
 ```
 
-The tool never creates or configures a Linux CAN interface and never invokes
-`sudo`. Configure `can0` separately before using the default SocketCAN backend.
+A ferramenta não cria interfaces SocketCAN, não executa `sudo` e não configura
+o bitrate de `can0`. Nos backends seriais SLCAN e SeeedStudio, ela envia o
+bitrate explicitamente ao adaptador; para SeeedStudio também força
+`frame_type=EXT`.
 
-## Use
+## Descoberta e identidade
+
+O host reivindica seu próprio endereço J1939, envia um Request global do PGN
+Address Claimed e coleta pares `NAME`/endereço. Depois tenta `IDENTIFY` de forma
+dirigida. Só marca um dispositivo como CanLoader quando endereço, versão 2,
+target code `0xF1` e flags J1939/Address Claim/TP RX são coerentes:
 
 ```bash
 python -m canloader ls --interface socketcan --channel can0
-python -m canloader info --interface socketcan --channel can0 --node 1
-python -m canloader update application.bin --channel can0
-python -m canloader update application.bin --channel can0 --run
-python -m canloader verify --channel can0
-python -m canloader run --channel can0
-python -m canloader reboot --channel can0 --node 1
-python -m canloader set-node 7 --channel can0 --node 1
 ```
 
-`ls` envia quatro pedidos broadcast `PROBE` não invasivos e mostra node,
-target, protocolo, modo de execução, validade da aplicação e UID STM32 de 96
-bits. `reboot` depende do contrato de controle no lado da aplicação; a aplicação
-de teste incluída o implementa. `set-node NEW_NODE` endereça o `--node` atual,
-persiste o novo endereço, reinicia e confirma o node depois do reset.
+Todo comando dirigido usa `--address`; `--name` é uma trava de identidade
+opcional. Mesmo quando `--name` é omitido, o cliente resolve o endereço por
+Address Claimed e trava o NAME antes de qualquer operação. A atualização é
+interrompida se outro NAME assumir o endereço. Antes de uma operação pública,
+o cliente também exige `IDENTIFY` compatível e reutiliza essa validação enquanto
+NAME/SA permanecem bloqueados; mudança de rota invalida o cache.
 
-Every node command accepts `--interface`, `--channel`, `--node`, `--timeout`,
-`--erase-timeout`, `--retries`, and `--verbose`. `--retries` is the number of
-retransmissions after the initial attempt. Node IDs are in the range 1..127.
-Firmware files must contain at least the initial stack pointer and reset vector
-(8 bytes) and must fit the `APP_MAX_SIZE` reported by the target.
-
-`ls` não recebe `--node`; use `--scan-timeout` para definir a janela de coleta
-de cada seletor. Em macOS com um CANable usando firmware SLCAN:
+Se o Tool já operacional perder seu próprio SA para um NAME numericamente
+menor, ele invalida rota/perfil, escolhe um fallback AAC livre, repete Address
+Claim e IDENTIFY antes do próximo comando. Uma atualização aberta pelo SA
+anterior deve ser reiniciada, pois o owner embarcado não muda no meio da sessão.
 
 ```bash
-CAN_BITRATE=500000 python -m canloader ls \
-  --interface slcan --channel /dev/cu.usbmodemXXXX
+python -m canloader info --channel can0 --address 0x80
+python -m canloader info --channel can0 \
+  --address 0x80 --name 0x8000000000123456
+python -m canloader update application.bin --channel can0 \
+  --address 0x80 --name 0x8000000000123456 --run
+python -m canloader verify --channel can0 --address 0x80
+python -m canloader run --channel can0 --address 0x80
+python -m canloader reboot --channel can0 --address 0x80
+python -m canloader set-address 0x91 --channel can0 \
+  --address 0x80 --name 0x8000000000123456
 ```
-The erase timeout defaults to 4 seconds, below the target's 5-second inactive
-transfer timeout so a lost ERASE ACK can be retried while the session is valid.
 
-The update flow is `DISCOVER`, `INFO(APP_MAX_SIZE)`, `START_UPDATE`,
-`SET_IMAGE_CRC`, `ERASE`, block transfer, `FINISH`, and `VERIFY`, followed by
-`RUN_APPLICATION` when `--run` is supplied. CRC values use CRC-32/ISO-HDLC, as
-implemented by `zlib.crc32`. The client uses the block size returned by
-`START_UPDATE` (100 bytes on the STM32F1 target) and gives each stateless query
-a distinct correlation session so a delayed INFO ACK cannot satisfy the next
-selector.
+`set-address` usa o PGN Commanded Address, transportado por BAM com o payload
+`NAME_LE64 + novo_endereço`; o cliente confirma claim estável, ocupante único e
+IDENTIFY na nova rota. Os endereços válidos são `0x00..0xFD`, mas o novo SA
+deve ser diferente de `--source-address`; `0xFE` é Null/Cannot Claim e `0xFF`
+é global.
 
-## Tests
+O host usa por padrão SA `0xF9` e um NAME de laboratório. Em uma implantação,
+configure uma identidade única e válida com `--source-address` e
+`--source-name`.
 
-The tests use an injected in-memory bus and require neither `python-can` nor CAN
-hardware when run directly from the repository:
+## macOS e SLCAN
+
+Localize a porta serial comparando `ls /dev/cu.*` antes e depois de conectar o
+adaptador. Para um CANable/Lawicel com suporte a quadros estendidos:
 
 ```bash
-python -m pip install pytest
-python -m pytest Tests/python
+python -m canloader ls \
+  --interface slcan \
+  --channel /dev/cu.usbmodemXXXX \
+  --bitrate 500000
 ```
+
+Se necessário, informe também `--tty-baudrate 115200`. O backend deve suportar
+quadros Lawicel `T` (CAN 29 bits); o protocolo v2 não possui fallback para IDs
+CAN de 11 bits.
+
+Para um adaptador suportado pelo backend `seeedstudio`, troque a interface e
+informe a baudrate serial quando necessário, por exemplo
+`--interface seeedstudio --tty-baudrate 2000000`. A CLI mantém
+`--bitrate 500000` como bitrate CAN e seleciona quadros estendidos.
+
+## Atualização
+
+O fluxo é:
+
+1. Address Claim do host e resolução/travamento do NAME alvo.
+2. `IDENTIFY`; se a aplicação estiver ativa, `ENTER_BOOTLOADER` e nova
+   confirmação de Address Claimed para o mesmo NAME.
+3. Manifesto em Proprietary A (`START_UPDATE` com tamanho e `SET_IMAGE_CRC`).
+4. `DM14 ERASE`, `DM15 PROCEED/COMPLETED` e fechamento DM14.
+5. Para cada bloco de até 100 bytes, `DM14 WRITE`, DM16 e confirmação DM15.
+   DM16 com mais de 7 bytes usa TP.RTS/CTS; firmware nunca usa BAM.
+6. `FINALIZE`, `VERIFY` e, com `--run`, `RUN_APPLICATION`.
+
+O `EOM_ACK` do transporte confirma apenas a remontagem do payload. O cliente só
+avança depois do `DM15 OPERATION_COMPLETED`, que confirma o commit em Flash. O
+CRC é CRC-32/ISO-HDLC, compatível com `zlib.crc32`.
+
+As opções principais são `--timeout`, `--transport-timeout`,
+`--erase-timeout`, `--scan-timeout`, `--claim-timeout`, `--retries` e
+`--verbose`. `--retries` também cobre a retransmissão integral do BAM de
+Commanded Address quando claim/IDENTIFY não confirmam a mudança. O cliente
+aguarda `transport_timeout` antes de sobrepor um BAM parcial. O firmware deve
+conter ao menos SP inicial e vetor de reset
+(8 bytes) e caber em `APP_MAX_SIZE`.
+
+## Testes
+
+```bash
+python -m pip install -e 'Tools/canloader[test]'
+python -m pytest -q Tests/python
+```
+
+A suíte cobre vetores de ID/NAME, Address Claim e arbitragem, TP/BAM/RTS-CTS,
+DM14/DM15/DM16 byte a byte, identidade do alvo, duas ECUs simultâneas, CLI e
+adaptação `python-can`/SLCAN.
