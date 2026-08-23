@@ -8,6 +8,7 @@
 
 #include "boot_config.h"
 #include "boot_crc32.h"
+#include "boot_device_config.h"
 #include "boot_flash.h"
 #include "boot_image.h"
 #include "boot_metadata.h"
@@ -53,6 +54,7 @@ typedef struct
 
 static uint8_t application_flash[BOOT_APPLICATION_MAX_SIZE];
 static uint8_t metadata_flash[BOOT_METADATA_PAGE_SIZE];
+static uint8_t device_config_flash[BOOT_DEVICE_CONFIG_PAGE_SIZE];
 static fake_flash_t fake_flash;
 
 static uint8_t *fake_region_storage(boot_flash_region_t region, size_t *region_size)
@@ -69,6 +71,10 @@ static uint8_t *fake_region_storage(boot_flash_region_t region, size_t *region_s
             *region_size = sizeof(metadata_flash);
             return metadata_flash;
 
+        case BOOT_FLASH_REGION_DEVICE_CONFIG:
+            *region_size = sizeof(device_config_flash);
+            return device_config_flash;
+
         default:
             *region_size = 0U;
             return NULL;
@@ -79,6 +85,7 @@ static void fake_flash_reset(void)
 {
     memset(application_flash, UINT8_C(0xFF), sizeof(application_flash));
     memset(metadata_flash, UINT8_C(0xFF), sizeof(metadata_flash));
+    memset(device_config_flash, UINT8_C(0xFF), sizeof(device_config_flash));
     fake_flash = (fake_flash_t){
         .read_status = BOOT_FLASH_STATUS_OK,
         .erase_status = BOOT_FLASH_STATUS_OK,
@@ -335,6 +342,36 @@ static void test_metadata_header_little_endian_and_crc(void)
         assert(!boot_metadata_read(&(boot_metadata_t){0}));
         metadata_flash[index] ^= UINT8_C(1);
     }
+}
+
+static void test_device_config_persists_node_and_rejects_corruption(void)
+{
+    uint8_t node_id = 0U;
+
+    fake_flash_reset();
+    assert(!boot_device_config_read(&node_id));
+    assert(boot_device_config_load_node() == BOOT_DEFAULT_NODE_ID);
+
+    assert(boot_device_config_store_node(37U) == BOOT_FLASH_STATUS_OK);
+    assert(fake_flash.erase_calls == 1U);
+    assert(fake_flash.erases[0].region == BOOT_FLASH_REGION_DEVICE_CONFIG);
+    assert(fake_flash.erases[0].length == BOOT_DEVICE_CONFIG_PAGE_SIZE);
+    assert(fake_flash.write_calls == 1U);
+    assert(fake_flash.writes[0].region == BOOT_FLASH_REGION_DEVICE_CONFIG);
+    assert(fake_flash.writes[0].length == BOOT_DEVICE_CONFIG_SERIALIZED_SIZE);
+    assert(boot_device_config_read(&node_id));
+    assert(node_id == 37U);
+    assert(boot_device_config_load_node() == 37U);
+
+    device_config_flash[BOOT_DEVICE_CONFIG_CRC_OFFSET] ^= UINT8_C(1);
+    assert(!boot_device_config_read(&node_id));
+    assert(boot_device_config_load_node() == BOOT_DEFAULT_NODE_ID);
+
+    fake_flash_reset();
+    assert(boot_device_config_store_node(0U) == BOOT_FLASH_STATUS_RANGE);
+    assert(boot_device_config_store_node(128U) == BOOT_FLASH_STATUS_RANGE);
+    assert(fake_flash.erase_calls == 0U);
+    assert(fake_flash.write_calls == 0U);
 }
 
 static void test_metadata_marker_transitions_and_precedence(void)
@@ -601,6 +638,7 @@ static void test_candidate_and_persisted_image_validation(void)
 
 int main(void)
 {
+    test_device_config_persists_node_and_rejects_corruption();
     test_metadata_header_little_endian_and_crc();
     test_metadata_marker_transitions_and_precedence();
     test_metadata_rejects_torn_and_unknown_markers();

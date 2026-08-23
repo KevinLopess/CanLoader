@@ -57,8 +57,9 @@ HAL_Init
 ```
 
 No target atual, o clock parte de HSE 8 MHz e PLL x9. O bxCAN usa PA11/PA12,
-500 kbit/s e modo normal. O filtro de recepção aceita somente o ID de comando
-do nó, o ID DATA do nó e o ID de broadcast.
+500 kbit/s e modo normal. Antes de configurar o filtro, o bootloader carrega o
+node ID da página persistente; o filtro aceita somente o ID de comando desse nó,
+seu ID DATA e o ID de broadcast.
 
 `bootloader_init()` inicializa Flash e CAN e valida a imagem persistida. Falha
 de inicialização leva a `ERROR`. Uma imagem válida abre a boot window; sem imagem
@@ -85,7 +86,9 @@ WAIT_HOST              BOOT_WINDOW (1500 ms)
 ```
 
 Um pedido de controle decodificável e aceito retém o dispositivo durante a boot
-window. Frames malformados, versões desconhecidas e comandos mutáveis enviados
+window, exceto `PROBE`, que foi definido como inventário não invasivo. Uma
+solicitação da aplicação usa registradores de backup e abre uma janela de 10 s.
+Frames malformados, versões desconhecidas e comandos mutáveis enviados
 por broadcast não impedem o autoboot. Se a aplicação é inválida, não há reset em
 loop nem expiração: o bootloader continua recuperável pela CAN.
 
@@ -94,7 +97,7 @@ loop nem expiração: o bootloader continua recuperável pela CAN.
 | Estado | Função e saída normal |
 |---|---|
 | `INIT` | prepara o contexto e os ports; segue para `BOOT_WINDOW`, `WAIT_HOST` ou `ERROR` |
-| `BOOT_WINDOW` | aguarda 1500 ms; pedido válido/aceito retém o bootloader, expiração executa a imagem |
+| `BOOT_WINDOW` | aguarda 1500 ms normalmente ou 10 s após solicitação da aplicação; pedido válido/aceito, exceto PROBE, retém o bootloader |
 | `WAIT_HOST` | aguarda descoberta, consulta, atualização ou execução de imagem válida |
 | `PREPARE_UPDATE` | sessão e tamanho aceitos; aguarda CRC e `ERASE` |
 | `ERASE` | grava e confere metadata `UPDATING`, depois apaga as páginas da aplicação |
@@ -102,6 +105,7 @@ loop nem expiração: o bootloader continua recuperável pela CAN.
 | `VERIFY` | calcula CRC, valida vetores e promove metadata para `VALID` |
 | `READY` | imagem completa e novamente validada; aceita nova atualização ou `RUN_APPLICATION` |
 | `RUN_APPLICATION` | drena a resposta CAN de execução e faz o handoff |
+| `RESET` | drena o ACK de reendereçamento e executa reset para aplicar o novo node |
 | `ERROR` | erro de inicialização; somente sinaliza pelo LED |
 
 `ERASE` e `VERIFY` são estados explícitos, mas suas operações são síncronas

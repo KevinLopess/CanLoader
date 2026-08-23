@@ -41,18 +41,18 @@ Ferramentas J1939/ISOBUS não devem interpretar os IDs do CanLoader como PGNs.
 O bitrate de 500 kbit/s e os timings estão fixos na configuração CubeMX do
 target F1. Não há autodetecção ou negociação de bitrate.
 
-## Um nó e uma sessão por instância
+## Um update e uma sessão por instância
 
-O node ID do firmware é definido em compile time; o cliente seleciona um nó por
-execução. A máquina de estados mantém uma única sessão de update e um único
+O node ID é persistente e configurável entre 1 e 127; o cliente seleciona um nó
+por operação. A máquina de estados mantém uma única sessão de update e um único
 bloco ativo. Não há atualizações paralelas, retomada persistente de offset ou
 gerenciador de múltiplas sessões.
 
-Vários dispositivos podem ser compilados com IDs distintos no mesmo barramento,
-mas esse cenário ainda precisa de validação em hardware. Broadcast é limitado a
-DISCOVER/INFO e não possui janela aleatória, escalonamento ou coleta de respostas.
-Um burst de respostas é possível; node IDs duplicados tornam respostas
-indistinguíveis. A CLI atual não enumera nós por broadcast.
+`canloader ls` coleta PROBE broadcast e UID, mas o protocolo não implementa
+janela aleatória nem address claiming. Um burst de respostas é possível; node
+IDs duplicados continuam indistinguíveis e uma resposta UID divergente no mesmo
+CAN ID pode causar erros no barramento. A atribuição de node único ainda é
+responsabilidade do operador, e o cenário multinó precisa de validação física.
 
 ## Transporte e disponibilidade
 
@@ -66,8 +66,8 @@ indistinguíveis. A CLI atual não enumera nós por broadcast.
   se o ACK ainda não tiver sido aceito/transmitido;
 - bus-off, congestionamento, perda prolongada e carga com múltiplos nós não
   foram caracterizados em hardware;
-- a CLI suporta inicialmente o backend SocketCAN, embora `python-can` permita
-  injetar outros backends.
+- a CLI usa backends de `python-can`; SocketCAN e SLCAN são os caminhos
+  documentados, mas os demais não foram validados.
 
 O host usa por padrão 0,5 s para ACK, 4 s para ERASE e três retransmissões; o
 firmware encerra uma transferência inativa após 5 s. Esses valores não foram
@@ -105,7 +105,7 @@ de reutilizar metadata criada por outra família.
 ## Validação pendente
 
 Hardware validation was not performed. Até a execução documentada da sessão
-[A–H](VALIDATION.md), permanecem sem evidência de bancada:
+[A–J](VALIDATION.md), permanecem sem evidência de bancada:
 
 - timings elétricos do barramento, transceptor e terminações;
 - gravação e readback da Flash real;

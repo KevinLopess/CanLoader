@@ -22,7 +22,7 @@ typedef enum
     BOOT_CAN_STATUS_ERROR
 } boot_can_status_t;
 
-bool boot_can_init(void);
+bool boot_can_init(uint8_t node_id);
 bool boot_can_start(void);
 void boot_can_stop(void);
 boot_can_status_t boot_can_send(const boot_can_frame_t *frame);

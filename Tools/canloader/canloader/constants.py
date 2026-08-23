@@ -5,6 +5,7 @@ from enum import IntEnum
 
 PROTOCOL_VERSION = 1
 
+BROADCAST_ID = 0x500
 RESPONSE_ID_BASE = 0x580
 COMMAND_ID_BASE = 0x600
 DATA_ID_BASE = 0x700
@@ -19,6 +20,8 @@ MIN_IMAGE_SIZE = 8
 class Command(IntEnum):
     DISCOVER = 0x01
     INFO = 0x02
+    PROBE = 0x03
+    SET_NODE_ID = 0x04
     START_UPDATE = 0x10
     SET_IMAGE_CRC = 0x11
     ERASE = 0x12
@@ -27,6 +30,7 @@ class Command(IntEnum):
     FINISH = 0x30
     VERIFY = 0x31
     RUN_APPLICATION = 0x32
+    ENTER_BOOTLOADER = 0x33
     ABORT = 0x3F
 
 
@@ -41,6 +45,21 @@ class InfoSelector(IntEnum):
     APP_MAX_SIZE = 2
     STORED_SIZE = 3
     STORED_CRC = 4
+    UID_WORD_0 = 5
+    UID_WORD_1 = 6
+    UID_WORD_2 = 7
+
+
+class ProbeSelector(IntEnum):
+    CAPABILITIES = 0
+    UID_WORD_0 = 1
+    UID_WORD_1 = 2
+    UID_WORD_2 = 3
+
+
+CAPABILITY_APPLICATION_VALID = 1 << 0
+CAPABILITY_UPDATE_ACTIVE = 1 << 1
+CAPABILITY_APPLICATION_RUNNING = 1 << 2
 
 
 class NackCode(IntEnum):

@@ -33,6 +33,11 @@ static bool region_parameters(boot_flash_region_t region,
             *region_size = BOOT_METADATA_PAGE_SIZE;
             return true;
 
+        case BOOT_FLASH_REGION_DEVICE_CONFIG:
+            *base_address = BOOT_DEVICE_CONFIG_ADDRESS;
+            *region_size = BOOT_DEVICE_CONFIG_PAGE_SIZE;
+            return true;
+
         default:
             return false;
     }

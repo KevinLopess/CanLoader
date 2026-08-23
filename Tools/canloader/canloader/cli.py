@@ -7,7 +7,7 @@ import sys
 
 from . import __version__
 from .bus import open_bus
-from .client import BootloaderClient
+from .client import BootloaderClient, NetworkScanner
 from .constants import PROTOCOL_VERSION, InfoSelector
 from .errors import CanLoaderError
 
@@ -53,6 +53,17 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     common = _common_parser()
 
+    scan = subparsers.add_parser("ls", help="scan the CAN network without capturing autoboot")
+    scan.add_argument("--interface", default="socketcan", help="python-can backend")
+    scan.add_argument("--channel", default="can0", help="CAN channel (default: can0)")
+    scan.add_argument(
+        "--scan-timeout",
+        type=float,
+        default=0.2,
+        help="response collection time per probe in seconds (default: 0.2)",
+    )
+    scan.add_argument("--verbose", action="store_true", help="show CAN frame log")
+
     subparsers.add_parser("info", parents=[common], help="read bootloader information")
 
     update = subparsers.add_parser(
@@ -69,6 +80,17 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "run", parents=[common], help="run the currently valid application"
     )
+    subparsers.add_parser(
+        "reboot",
+        parents=[common],
+        help="ask the application to reboot into the bootloader",
+    )
+    set_node = subparsers.add_parser(
+        "set-node",
+        parents=[common],
+        help="persist a new node ID and reset the bootloader",
+    )
+    set_node.add_argument("new_node", type=_auto_int, help="new node ID (1..127)")
     return parser
 
 
@@ -84,10 +106,12 @@ class _Progress:
         )
 
 
-def _client_from_args(bus: object, args: argparse.Namespace) -> BootloaderClient:
+def _client_from_args(
+    bus: object, args: argparse.Namespace, *, node: int | None = None
+) -> BootloaderClient:
     return BootloaderClient(
         bus,  # type: ignore[arg-type]
-        node=args.node,
+        node=args.node if node is None else node,
         timeout=args.timeout,
         erase_timeout=args.erase_timeout,
         retries=args.retries,
@@ -104,9 +128,29 @@ def _run_command(args: argparse.Namespace) -> None:
                 f"could not read firmware {args.firmware}: {exc}"
             ) from exc
 
-    with open_bus(
-        args.interface, args.channel, send_timeout=args.timeout
-    ) as bus:
+    send_timeout = args.scan_timeout if args.command == "ls" else args.timeout
+    with open_bus(args.interface, args.channel, send_timeout=send_timeout) as bus:
+        if args.command == "ls":
+            devices = NetworkScanner(bus, timeout=args.scan_timeout).scan()
+            if not devices:
+                print("No CanLoader devices found.")
+                return
+            print("NODE  TARGET  PROTOCOL  MODE         APP      UID")
+            for device in devices:
+                if device.application_running:
+                    mode = "application"
+                elif device.update_active:
+                    mode = "update"
+                else:
+                    mode = "bootloader"
+                app = "valid" if device.application_valid else "invalid"
+                print(
+                    f"{device.node:>4}  0x{device.target_code:02X}    "
+                    f"{device.protocol_version:>8}  {mode:<11}  "
+                    f"{app:<7}  {device.uid or '-'}"
+                )
+            return
+
         client = _client_from_args(bus, args)
         if args.command == "info":
             client.discover()
@@ -118,6 +162,7 @@ def _run_command(args: argparse.Namespace) -> None:
             print(f"Application maximum size: {info.app_max_size} bytes")
             print(f"Stored image size: {info.stored_size} bytes")
             print(f"Stored image CRC: 0x{info.stored_crc:08X}")
+            print(f"Device UID: {info.uid}")
         elif args.command == "update":
             assert image is not None
             result = client.update(image, run=args.run, progress=_Progress())
@@ -135,6 +180,15 @@ def _run_command(args: argparse.Namespace) -> None:
             stored_crc = client.info(InfoSelector.STORED_CRC)
             client.run_application(stored_crc)
             print("Application run requested.")
+        elif args.command == "reboot":
+            client.enter_bootloader()
+            client.discover()
+            print(f"Node {args.node} entered the bootloader.")
+        elif args.command == "set-node":
+            client.set_node_id(args.new_node)
+            new_client = _client_from_args(bus, args, node=args.new_node)
+            new_client.discover()
+            print(f"Node changed from {args.node} to {args.new_node}.")
         else:
             raise AssertionError(f"unhandled command {args.command}")
 

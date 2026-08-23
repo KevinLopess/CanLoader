@@ -1,6 +1,12 @@
 """Host implementation of the CanLoader CAN bootloader protocol."""
 
-from .client import BootloaderClient, DeviceInfo, UpdateResult
+from .client import (
+    BootloaderClient,
+    DeviceInfo,
+    DiscoveredDevice,
+    NetworkScanner,
+    UpdateResult,
+)
 from .constants import Command, InfoSelector, NackCode, ResponseKind
 from .crc import crc32_iso_hdlc
 from .errors import (
@@ -16,10 +22,12 @@ __all__ = [
     "CanLoaderError",
     "Command",
     "DeviceInfo",
+    "DiscoveredDevice",
     "DeviceSessionTimeout",
     "InfoSelector",
     "NackCode",
     "NackError",
+    "NetworkScanner",
     "ProtocolError",
     "ResponseKind",
     "ResponseTimeout",

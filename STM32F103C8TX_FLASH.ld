@@ -45,7 +45,8 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 20K
-  FLASH    (rx)    : ORIGIN = 0x08000000,  LENGTH = 16K
+  FLASH    (rx)    : ORIGIN = 0x08000000,  LENGTH = 15K
+  DEVICE_CONFIG (r) : ORIGIN = 0x08003C00, LENGTH = 1K
 }
 
 /* Sections */
@@ -186,7 +187,10 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 
-  __bootloader_flash_end__ = ORIGIN(FLASH) + LENGTH(FLASH);
+  __bootloader_code_end__ = ORIGIN(FLASH) + LENGTH(FLASH);
+  __bootloader_flash_end__ = ORIGIN(DEVICE_CONFIG) + LENGTH(DEVICE_CONFIG);
+  ASSERT(__bootloader_code_end__ == 0x08003C00,
+         "Bootloader code must end at the device configuration page")
   ASSERT(__bootloader_flash_end__ == 0x08004000,
          "Bootloader partition must end at application start")
 }

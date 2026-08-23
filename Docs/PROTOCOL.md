@@ -25,21 +25,22 @@ tipo diferente do layout esperado é malformado.
 
 ## Identificadores
 
-Cada firmware é compilado com `BOOT_NODE_ID` no intervalo `1..127`.
+Cada dispositivo usa um node ID no intervalo `1..127`. O valor default é 1 e
+fica em um registro persistente separado da aplicação.
 
 | Direção | Fórmula | Nó 1 | Uso |
 |---|---:|---:|---|
 | bootloader → host | `0x580 + node` | `0x581` | ACK/NACK |
 | host → bootloader | `0x600 + node` | `0x601` | comandos de controle |
 | host → bootloader | `0x700 + node` | `0x701` | DATA |
-| host → todos | `0x500` | `0x500` | apenas DISCOVER e INFO |
+| host → todos | `0x500` | `0x500` | DISCOVER, INFO e PROBE |
 
 O filtro bxCAN do nó aceita seus IDs de comando e DATA e o broadcast. Um
-controle broadcast bem formado que não seja DISCOVER/INFO é silenciosamente
+controle broadcast bem formado que não seja DISCOVER/INFO/PROBE é silenciosamente
 ignorado. O protocolo não implementa escalonamento de respostas broadcast;
 vários nós podem responder quase simultaneamente e IDs de nó duplicados tornam
-as respostas indistinguíveis. A CLI atual opera com um `--node` específico e não
-faz enumeração broadcast.
+as respostas indistinguíveis. A CLI usa `PROBE` em `ls` e endereçamento unicast
+nas operações que alteram estado.
 
 ## Layout do pedido de controle
 
@@ -118,6 +119,8 @@ ser aceito pela consulta seguinte.
 |---|---:|---|---|---:|
 | `DISCOVER` | `0x01` | qualquer estado operacional | `0` / `0` | capabilities |
 | `INFO` | `0x02` | qualquer estado operacional | `0` / seletor | valor selecionado |
+| `PROBE` | `0x03` | bootloader ou aplicação compatível | seletor / `0` | valor selecionado |
+| `SET_NODE_ID` | `0x04` | `BOOT_WINDOW`, `WAIT_HOST` ou `READY`; unicast | `0` / novo node | novo node |
 | `START_UPDATE` | `0x10` | `WAIT_HOST` ou `READY`; duplicata idêntica em `PREPARE_UPDATE` | `0` / tamanho da imagem | tamanho de bloco, `1..100` (`100` no F1) |
 | `SET_IMAGE_CRC` | `0x11` | `PREPARE_UPDATE`, mesma sessão | `0` / CRC esperado | CRC esperado |
 | `ERASE` | `0x12` | `PREPARE_UPDATE`, CRC recebido; duplicata aceita antes do primeiro bloco | `0` / `0` | tamanho da imagem |
@@ -126,13 +129,21 @@ ser aceito pela consulta seguinte.
 | `FINISH` | `0x30` | todos os bytes confirmados e nenhum bloco aberto; duplicata em `READY` | `0` / `0` | CRC calculado |
 | `VERIFY` | `0x31` | metadata e imagem precisam validar | `0` / `0` | CRC persistido |
 | `RUN_APPLICATION` | `0x32` | metadata e imagem precisam validar | `0` / `0` | CRC persistido |
+| `ENTER_BOOTLOADER` | `0x33` | aplicação compatível ou bootloader | `0` / `0` | `0` |
 | `ABORT` | `0x3F` | sessão precisa coincidir quando há uma ativa | `0` / `0` | `0` |
 
 `VERIFY` e `RUN_APPLICATION` validam a imagem persistida no momento do pedido;
 não dependem de uma sessão de update previamente aberta. Durante
 `BOOT_WINDOW`, somente um pedido decodificável que resulte em ACK captura a
 janela; ruído, versão inválida, NACK e comando mutável em broadcast não impedem
-o autoboot. START/RUN/ABORT mudam diretamente para seus estados de destino.
+o autoboot. `PROBE` é a exceção explícita: responde sem capturar a janela.
+START/RUN/ABORT mudam diretamente para seus estados de destino.
+
+Depois de persistir um node novo, o bootloader responde no ID antigo, registra
+uma solicitação de boot, reinicia e passa a filtrar o endereço novo. A aplicação
+compatível trata `ENTER_BOOTLOADER` com ACK, solicitação em registradores de
+backup e reset. A solicitação aumenta a janela de boot para 10 s; sem captura,
+a aplicação válida volta a executar.
 
 ### Seletores INFO
 
@@ -143,6 +154,21 @@ o autoboot. START/RUN/ABORT mudam diretamente para seus estados de destino.
 | `APPLICATION_MAX_SIZE` | 2 | `0x0000BC00` / 48128 |
 | `STORED_IMAGE_SIZE` | 3 | tamanho da metadata legível ou zero |
 | `STORED_IMAGE_CRC` | 4 | CRC da metadata legível ou zero |
+| `UID_WORD_0` | 5 | UID STM32 em `UID_BASE + 0` |
+| `UID_WORD_1` | 6 | UID STM32 em `UID_BASE + 4` |
+| `UID_WORD_2` | 7 | UID STM32 em `UID_BASE + 8` |
+
+### Seletores PROBE
+
+`PROBE` usa `parameter` como seletor e exige `value=0`. Ele é separado de INFO
+para permitir inventário não invasivo durante o autoboot.
+
+| Seletor | Valor | Resposta |
+|---|---:|---|
+| `CAPABILITIES` | 0 | palavra de capabilities |
+| `UID_WORD_0` | 1 | primeira palavra do UID |
+| `UID_WORD_1` | 2 | segunda palavra do UID |
+| `UID_WORD_2` | 3 | terceira palavra do UID |
 
 A palavra `CAPABILITIES` é:
 
@@ -150,7 +176,8 @@ A palavra `CAPABILITIES` é:
 |---:|---|
 | 0 | aplicação atualmente válida |
 | 1 | update ativo (`PREPARE_UPDATE`, `ERASE`, `RECEIVE` ou `VERIFY`) |
-| 7..2 | reservados, zero |
+| 2 | resposta originada pela aplicação em execução |
+| 7..3 | reservados, zero |
 | 15..8 | node ID |
 | 23..16 | versão do protocolo |
 | 31..24 | target code; `0xF1` no STM32F1 |
@@ -219,12 +246,13 @@ permite ao host reconhecer o commit e avançar.
 O firmware mantém uma única sessão de update. `START_UPDATE` exige um byte de
 sessão não zero; o cliente Python escolhe aleatoriamente um valor em `1..255` por
 instância. Comandos e DATA de outra sessão são rejeitados enquanto a transferência
-está ativa. DISCOVER e cada INFO usam sessões correlacionadoras distintas da
+está ativa. DISCOVER, cada INFO e cada seletor PROBE usam sessões correlacionadoras distintas da
 sessão de update, pois essas operações são stateless no firmware.
 
 | Temporizador | Default | Comportamento |
 |---|---:|---|
 | boot window do firmware | 1500 ms | sem controle recebido, executa imagem válida |
+| boot window solicitada pela aplicação | 10000 ms | sem controle recebido, volta à imagem válida |
 | inatividade de transferência no firmware | 5000 ms | em `PREPARE_UPDATE`/`RECEIVE`, encerra sessão e emite `NACK(ABORT, TIMEOUT)` |
 | ACK normal do host | 0,5 s | retransmite ao expirar |
 | ACK de ERASE do host | 4 s | menor que os 5 s do dispositivo para permitir retry da sessão |

@@ -34,6 +34,7 @@ $(BUILD_DIR)/test_bootloader: test_bootloader.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(BUILD_DIR)/test_metadata_image: test_metadata_image.c \
+                                  $(ROOT)/Application/Src/boot_device_config.c \
                                   $(ROOT)/Application/Src/boot_metadata.c \
                                   $(ROOT)/Application/Src/boot_image.c \
                                   $(ROOT)/Protocol/Src/boot_crc32.c \

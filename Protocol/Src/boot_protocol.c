@@ -32,6 +32,7 @@ void boot_protocol_write_u32_le(uint8_t *data, uint32_t value)
 }
 
 bool boot_protocol_decode_request(const boot_can_frame_t *frame,
+                                  uint8_t node_id,
                                   boot_protocol_request_t *request,
                                   boot_error_t *error)
 {
@@ -40,7 +41,8 @@ bool boot_protocol_decode_request(const boot_can_frame_t *frame,
         return false;
     }
 
-    if (((frame->id != BOOT_CAN_COMMAND_ID) && (frame->id != BOOT_CAN_BROADCAST_ID)) ||
+    if (((frame->id != BOOT_CAN_COMMAND_ID(node_id)) &&
+         (frame->id != BOOT_CAN_BROADCAST_ID)) ||
         (frame->dlc != BOOT_CAN_MAX_DATA_LENGTH))
     {
         *error = BOOT_ERROR_MALFORMED_FRAME;
@@ -95,6 +97,7 @@ bool boot_protocol_decode_block(const boot_protocol_request_t *request,
 }
 
 bool boot_protocol_decode_data(const boot_can_frame_t *frame,
+                               uint8_t node_id,
                                boot_protocol_data_t *data,
                                boot_error_t *error)
 {
@@ -105,7 +108,7 @@ bool boot_protocol_decode_data(const boot_can_frame_t *frame,
         return false;
     }
 
-    if ((frame->id != BOOT_CAN_DATA_ID) || (frame->dlc < 4U) ||
+    if ((frame->id != BOOT_CAN_DATA_ID(node_id)) || (frame->dlc < 4U) ||
         (frame->dlc > BOOT_CAN_MAX_DATA_LENGTH))
     {
         *error = BOOT_ERROR_MALFORMED_FRAME;
@@ -131,6 +134,7 @@ bool boot_protocol_decode_data(const boot_can_frame_t *frame,
 }
 
 void boot_protocol_make_response(boot_can_frame_t *frame,
+                                 uint8_t node_id,
                                  boot_response_kind_t kind,
                                  boot_command_t command,
                                  uint8_t session,
@@ -141,7 +145,7 @@ void boot_protocol_make_response(boot_can_frame_t *frame,
         return;
     }
 
-    frame->id = BOOT_CAN_RESPONSE_ID;
+    frame->id = BOOT_CAN_RESPONSE_ID(node_id);
     frame->dlc = BOOT_CAN_MAX_DATA_LENGTH;
     frame->data[0] = BOOT_PROTOCOL_VERSION;
     frame->data[1] = (uint8_t)kind;

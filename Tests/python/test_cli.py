@@ -48,3 +48,19 @@ def test_update_accepts_all_transport_options_and_run() -> None:
 def test_verify_and_run_commands_are_available() -> None:
     assert build_parser().parse_args(["verify"]).command == "verify"
     assert build_parser().parse_args(["run"]).command == "run"
+
+
+def test_network_management_commands_are_available() -> None:
+    scan = build_parser().parse_args(
+        ["ls", "--interface", "slcan", "--channel", "/dev/cu.usbmodem1"]
+    )
+    assert scan.command == "ls"
+    assert scan.scan_timeout == 0.2
+    assert scan.interface == "slcan"
+
+    reboot = build_parser().parse_args(["reboot", "--node", "7"])
+    assert reboot.node == 7
+
+    set_node = build_parser().parse_args(["set-node", "42", "--node", "7"])
+    assert set_node.node == 7
+    assert set_node.new_node == 42

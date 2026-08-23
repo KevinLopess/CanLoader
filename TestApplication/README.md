@@ -10,6 +10,13 @@ Depois da inicializacao, uma interrupcao de SysTick a cada 1 ms alimenta uma
 maquina de estados nao bloqueante. O LED ativo-baixo em PC13 repete duas
 piscadas de 80 ms, separadas por 100 ms, seguidas por uma pausa de 740 ms.
 
+A aplicação também inicializa bxCAN em PA11/PA12 a 500 kbit/s. Ela lê o node ID
+persistente em `0x08003C00`, responde aos seletores broadcast `PROBE` usados por
+`canloader ls` e aceita `ENTER_BOOTLOADER` somente no ID de comando do próprio
+node. Depois de enviar o ACK, grava a solicitação nos registradores de backup e
+executa um reset de sistema. O bootloader consome a solicitação e abre uma janela
+de 10 s; se nenhum host o capturar, a aplicação volta a executar.
+
 A aplicacao nao corrige IRQs mascaradas pelo bootloader. Se `PRIMASK` chegar
 diferente de zero, o LED permanece continuamente aceso como indicacao de erro;
 portanto, o padrao de duas piscadas tambem valida o handoff das interrupcoes.

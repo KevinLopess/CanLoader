@@ -8,7 +8,8 @@
 typedef enum
 {
     BOOT_FLASH_REGION_APPLICATION = 0,
-    BOOT_FLASH_REGION_METADATA
+    BOOT_FLASH_REGION_METADATA,
+    BOOT_FLASH_REGION_DEVICE_CONFIG
 } boot_flash_region_t;
 
 typedef enum

@@ -2,7 +2,9 @@ TARGET := canloader_test_app
 BUILD_DIR := build
 PROJECT_ROOT := ..
 
-STM32_GNU_BIN ?= $(firstword $(wildcard $(HOME)/apps/stm32cubeide/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin))
+STM32_GNU_BIN ?= $(firstword \
+	$(wildcard $(HOME)/apps/stm32cubeide/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin) \
+	$(wildcard /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin))
 TOOLCHAIN ?= $(if $(STM32_GNU_BIN),$(STM32_GNU_BIN)/arm-none-eabi-,arm-none-eabi-)
 CC := $(TOOLCHAIN)gcc
 OBJCOPY := $(TOOLCHAIN)objcopy
@@ -11,6 +13,10 @@ SIZE := $(TOOLCHAIN)size
 CPU_FLAGS := -mcpu=cortex-m3 -mthumb
 DEFINES := -DSTM32F103xB
 INCLUDES := \
+	-I$(PROJECT_ROOT)/Application/Inc \
+	-I$(PROJECT_ROOT)/Config \
+	-I$(PROJECT_ROOT)/Portable/Inc \
+	-I$(PROJECT_ROOT)/Protocol/Inc \
 	-I$(PROJECT_ROOT)/Drivers/CMSIS/Include \
 	-I$(PROJECT_ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/Include
 
@@ -25,12 +31,14 @@ LDLIBS := -lgcc
 
 C_SOURCES := \
 	Src/main.c \
-	Src/system_stm32f1xx.c
+	Src/system_stm32f1xx.c \
+	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c
 ASM_SOURCE := $(PROJECT_ROOT)/Core/Startup/startup_stm32f103c8tx.s
 
 OBJECTS := \
 	$(BUILD_DIR)/main.o \
 	$(BUILD_DIR)/system_stm32f1xx.o \
+	$(BUILD_DIR)/boot_crc32.o \
 	$(BUILD_DIR)/startup_stm32f103c8tx.o
 DEPS := $(OBJECTS:.o=.d)
 
@@ -56,6 +64,9 @@ $(BUILD_DIR)/main.o: Src/main.c Makefile | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/system_stm32f1xx.o: Src/system_stm32f1xx.c Makefile | $(BUILD_DIR)
+	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_crc32.o: $(PROJECT_ROOT)/Protocol/Src/boot_crc32.c Makefile | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/startup_stm32f103c8tx.o: $(ASM_SOURCE) Makefile | $(BUILD_DIR)

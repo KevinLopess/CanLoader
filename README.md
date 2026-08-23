@@ -13,7 +13,7 @@ SocketCAN e uma aplicação relocada de teste.
 
 > **Estado da validação:** testes automatizados e builds não substituem a
 > validação elétrica e funcional. Hardware validation was not performed. Execute
-> a sessão A–H de [validação](Docs/VALIDATION.md) antes de considerar o sistema
+> a sessão A–J de [validação](Docs/VALIDATION.md) antes de considerar o sistema
 > validado em bancada.
 
 ## Características implementadas
@@ -28,6 +28,9 @@ SocketCAN e uma aplicação relocada de teste.
 - limites de Flash definidos pelo firmware: o protocolo não recebe endereços
   arbitrários do host;
 - CLI `canloader` com `info`, `update`, `verify` e `run`;
+- descoberta não invasiva com `ls`, UID físico, node ID persistente e
+  reendereçamento com `set-node`;
+- entrada remota no bootloader com `reboot`, usando reset e uma janela de 10 s;
 - aplicação de teste sem HAL, linkada em `0x08004000`, com padrão visual
   diferente do bootloader.
 
@@ -43,7 +46,7 @@ O protocolo é **J1939-inspired, not SAE J1939 compliant**. Consulte as
 | CAN | bxCAN em modo normal, 500 kbit/s, prescaler 4, BS1 13 TQ, BS2 4 TQ, SJW 1 TQ |
 | Pinos CAN | PA11/CAN_RX e PA12/CAN_TX |
 | LED | PC13, ativo em nível baixo |
-| Nó padrão | 1 (`0x601` comando, `0x701` dados, `0x581` resposta) |
+| Nó | 1 por padrão; configurável e persistente (`0x600/0x700/0x580 + node`) |
 
 O STM32 precisa de um transceptor CAN externo. Ligue CAN_H, CAN_L e GND comum,
 com 120 Ω em cada extremidade física do barramento. Não conecte diretamente os
@@ -139,12 +142,26 @@ de teste foram compilados e a virtual environment acima está ativa.
    ip -details -statistics link show can0
    ```
 
-3. Consulte o nó e envie a aplicação:
+3. Descubra os nós, consulte o target e envie a aplicação:
 
    ```sh
+   python -m canloader ls --interface socketcan --channel can0
    python -m canloader info --interface socketcan --channel can0 --node 1
    python -m canloader update TestApplication/build/canloader_test_app.bin --interface socketcan --channel can0 --node 1 --run
    ```
+
+Depois que a aplicação de teste estiver executando, ela continua respondendo a
+`ls` e pode retornar ao bootloader sem RESET físico:
+
+```sh
+python -m canloader reboot --interface socketcan --channel can0 --node 1
+python -m canloader set-node 7 --interface socketcan --channel can0 --node 1
+```
+
+`set-node` deve ser enviado ao bootloader no endereço atual. Ele grava a página
+de configuração, responde no endereço antigo, reinicia e confirma o endereço
+novo. Updates da aplicação não apagam essa configuração; erase total por SWD
+apaga e restaura o default 1.
 
 Os defaults do host são timeout normal de 0,5 s, timeout de erase de 4 s e três
 retransmissões depois da tentativa inicial. Use `--verbose` para registrar frames.
@@ -163,9 +180,10 @@ retransmissões depois da tentativa inicial. Use `--verbose` para registrar fram
 
 ## Documentação
 
+- [Implementação técnica completa e requisitos](Docs/IMPLEMENTACAO_BOOTLOADER.md)
 - [Arquitetura e portabilidade](Docs/ARCHITECTURE.md)
 - [Mapa de memória e metadata](Docs/MEMORY_MAP.md)
 - [Protocolo CAN v1](Docs/PROTOCOL.md)
-- [Sessão de validação A–H](Docs/VALIDATION.md)
+- [Sessão de validação A–J](Docs/VALIDATION.md)
 - [Limitações conhecidas](Docs/LIMITATIONS.md)
 - [Divergências em relação ao TCC](Docs/TCC_DIVERGENCES.md)

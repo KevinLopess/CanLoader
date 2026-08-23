@@ -3,12 +3,13 @@ from collections.abc import Callable
 
 import pytest
 
-from canloader.client import BootloaderClient
+from canloader.client import BootloaderClient, NetworkScanner
 from canloader.constants import (
     MAX_BLOCK_SIZE,
     Command,
     InfoSelector,
     NackCode,
+    ProbeSelector,
     ResponseKind,
 )
 from canloader.crc import crc32_iso_hdlc
@@ -128,6 +129,59 @@ def test_info_queries_use_distinct_sessions_to_reject_late_ack() -> None:
     assert client.info(InfoSelector.CAPABILITIES) == 0x11111111
     assert client.info(InfoSelector.APP_BASE) == 0x22222222
     assert bus.sent[0].data[2] != bus.sent[1].data[2]
+
+
+def test_set_node_and_enter_bootloader_require_exact_ack() -> None:
+    def responder(frame: CanFrame, bus: FakeBus) -> None:
+        value = int.from_bytes(frame.data[4:8], "little")
+        bus.queue(
+            encode_response(
+                3,
+                ResponseKind.ACK,
+                frame.data[1],
+                frame.data[2],
+                value,
+            )
+        )
+
+    client = BootloaderClient(FakeBus(responder), node=3, session=8)
+    assert client.enter_bootloader() == 0
+    assert client.set_node_id(17) == 17
+
+
+def test_network_scanner_collects_nodes_and_uids() -> None:
+    capabilities = {
+        1: 0xF1010101,
+        7: 0xF1010705,
+    }
+    uid_words = {
+        1: (0x11111111, 0x22222222, 0x33333333),
+        7: (0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC),
+    }
+
+    def responder(frame: CanFrame, bus: FakeBus) -> None:
+        assert frame.arbitration_id == 0x500
+        assert frame.data[1] == Command.PROBE
+        selector = ProbeSelector(frame.data[3])
+        for node in (7, 1):
+            if selector is ProbeSelector.CAPABILITIES:
+                value = capabilities[node]
+            else:
+                value = uid_words[node][selector.value - 1]
+            bus.queue(
+                encode_response(
+                    node,
+                    ResponseKind.ACK,
+                    Command.PROBE,
+                    frame.data[2],
+                    value,
+                )
+            )
+
+    devices = NetworkScanner(FakeBus(responder), timeout=0.001, session=9).scan()
+    assert [device.node for device in devices] == [1, 7]
+    assert devices[0].uid == "333333332222222211111111"
+    assert devices[1].application_running is True
 
 
 def test_asynchronous_session_timeout_is_fatal_immediately() -> None:

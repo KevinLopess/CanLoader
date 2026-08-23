@@ -12,17 +12,22 @@ static uint32_t filter_value(uint32_t standard_id)
     return standard_id << 5U;
 }
 
-bool boot_can_init(void)
+bool boot_can_init(uint8_t node_id)
 {
     CAN_FilterTypeDef filter = {0};
+
+    if ((node_id < BOOT_MIN_NODE_ID) || (node_id > BOOT_MAX_NODE_ID))
+    {
+        return false;
+    }
 
     filter.FilterBank = 0U;
     filter.FilterMode = CAN_FILTERMODE_IDLIST;
     filter.FilterScale = CAN_FILTERSCALE_16BIT;
-    filter.FilterIdHigh = filter_value(BOOT_CAN_COMMAND_ID);
-    filter.FilterIdLow = filter_value(BOOT_CAN_DATA_ID);
+    filter.FilterIdHigh = filter_value(BOOT_CAN_COMMAND_ID(node_id));
+    filter.FilterIdLow = filter_value(BOOT_CAN_DATA_ID(node_id));
     filter.FilterMaskIdHigh = filter_value(BOOT_CAN_BROADCAST_ID);
-    filter.FilterMaskIdLow = filter_value(BOOT_CAN_COMMAND_ID);
+    filter.FilterMaskIdLow = filter_value(BOOT_CAN_COMMAND_ID(node_id));
     filter.FilterFIFOAssignment = CAN_RX_FIFO0;
     filter.FilterActivation = ENABLE;
     filter.SlaveStartFilterBank = 14U;

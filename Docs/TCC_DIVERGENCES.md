@@ -10,19 +10,20 @@ funcionalidades já entregues.
 | Robustez/rollback | mecanismo à prova de falhas e capacidade de rollback | uma partição de aplicação; imagem parcial nunca executa e o nó é recuperável, mas a imagem anterior é perdida após erase |
 | Segurança | atualização segura e evolução para SHA-256/assinatura | CRC, vetores e limites de Flash; sem autenticação, assinatura, criptografia ou anti-rollback |
 | J1939 | J1939 e DM14/DM15/DM16 como referência e futura aderência maior | protocolo proprietário inspirado nos conceitos; CAN 11-bit, sem PGN/DM/TP J1939 |
-| Múltiplos dispositivos | atualização individual em rede e avaliação com múltiplos nós | IDs incluem node ID, mas cada firmware tem um ID de compile time, a CLI trata um nó e existe uma sessão global; rede multinó não foi validada |
+| Múltiplos dispositivos | atualização individual em rede e avaliação com múltiplos nós | node ID persistente, UID, scan e update unicast estão implementados; address claiming e validação física multinó ainda estão pendentes |
 | CAN e bitrate | avaliar diferentes baud rates e versões do CAN | somente bxCAN clássico a 500 kbit/s e frames de 11 bits |
 | Portabilidade | separar núcleo e camada de abstração, exemplificada como `port.c/.h` | separação mais granular em `boot_can`, `boot_flash` e `boot_platform`; somente o port STM32F1 existe |
-| Ferramenta host | Python 3.12 e `python-can` | pacote declara Python `>=3.10`, usa `python-can` e suporta SocketCAN inicialmente |
+| Ferramenta host | Python 3.12 e `python-can` | pacote declara Python `>=3.10`, usa `python-can` e documenta SocketCAN e SLCAN |
 | Hardware previsto | Blue Pill STM32F103C8T6, MCP2551, ST-LINK/V2 e CANable v2 | pinagem/configuração foi preparada para o STM32F103C8Tx; nenhuma combinação física foi validada nesta entrega |
-| Validação experimental | bancada, erros, interrupção, robustez e desempenho | existe procedimento A–H e testes sem hardware; os ensaios físicos e as medições ainda estão pendentes |
+| Validação experimental | bancada, erros, interrupção, robustez e desempenho | existe procedimento A–J e testes sem hardware; os ensaios físicos e as medições ainda estão pendentes |
 
 ## Decisões do primeiro target
 
 ### Mapa de memória
 
 O TCC propõe definir o mapeamento durante o projeto. A implementação o
-concretiza como 16 KiB de bootloader, 47 KiB de aplicação e 1 KiB de metadata.
+concretiza como 15 KiB de código do bootloader, 1 KiB de configuração persistente,
+47 KiB de aplicação e 1 KiB de metadata.
 A página retirada do fim da aplicação é necessária para distinguir de modo
 persistente imagens `UPDATING`, `VALID` e `INVALID`.
 

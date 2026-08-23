@@ -9,6 +9,7 @@
 
 #include "boot_can.h"
 #include "boot_config.h"
+#include "boot_device_config.h"
 #include "boot_flash.h"
 #include "boot_image.h"
 #include "boot_metadata.h"
@@ -31,6 +32,13 @@ typedef struct
     boot_flash_status_t metadata_begin_status;
     boot_flash_status_t metadata_mark_valid_status;
     boot_flash_status_t metadata_mark_invalid_status;
+    boot_flash_status_t device_config_store_status;
+    uint8_t configured_node;
+    uint8_t can_init_node;
+    uint8_t stored_node;
+    bool boot_request;
+    bool boot_request_set;
+    uint32_t uid_words[3];
     bool image_valid;
     bool metadata_read_ok;
     boot_metadata_t metadata;
@@ -80,6 +88,13 @@ static void fake_reset(void)
         .metadata_begin_status = BOOT_FLASH_STATUS_OK,
         .metadata_mark_valid_status = BOOT_FLASH_STATUS_OK,
         .metadata_mark_invalid_status = BOOT_FLASH_STATUS_OK,
+        .device_config_store_status = BOOT_FLASH_STATUS_OK,
+        .configured_node = BOOT_DEFAULT_NODE_ID,
+        .uid_words = {
+            UINT32_C(0x11223344),
+            UINT32_C(0x55667788),
+            UINT32_C(0x99AABBCC)
+        },
         .image_valid = false,
         .metadata_read_ok = false
     };
@@ -95,8 +110,9 @@ static void enqueue_rx(const boot_can_frame_t *frame)
     ++fake.rx_count;
 }
 
-bool boot_can_init(void)
+bool boot_can_init(uint8_t node_id)
 {
+    fake.can_init_node = node_id;
     return fake.can_init_ok;
 }
 
@@ -202,6 +218,24 @@ boot_flash_status_t boot_metadata_mark_invalid(void)
     return fake.metadata_mark_invalid_status;
 }
 
+bool boot_device_config_read(uint8_t *node_id)
+{
+    assert(node_id != NULL);
+    *node_id = fake.configured_node;
+    return true;
+}
+
+uint8_t boot_device_config_load_node(void)
+{
+    return fake.configured_node;
+}
+
+boot_flash_status_t boot_device_config_store_node(uint8_t node_id)
+{
+    fake.stored_node = node_id;
+    return fake.device_config_store_status;
+}
+
 bool boot_image_calculate_crc(uint32_t image_size, uint32_t *crc32)
 {
     (void)image_size;
@@ -252,6 +286,29 @@ void boot_platform_led_set(bool on)
     fake.last_led_value = on;
 }
 
+uint32_t boot_platform_uid_word(uint8_t index)
+{
+    assert(index < 3U);
+    return fake.uid_words[index];
+}
+
+bool boot_platform_take_boot_request(void)
+{
+    const bool requested = fake.boot_request;
+    fake.boot_request = false;
+    return requested;
+}
+
+void boot_platform_set_boot_request(void)
+{
+    fake.boot_request_set = true;
+}
+
+void boot_platform_reset(void)
+{
+    abort();
+}
+
 static boot_can_frame_t make_request(boot_command_t command,
                                      uint8_t session,
                                      uint8_t parameter,
@@ -259,7 +316,7 @@ static boot_can_frame_t make_request(boot_command_t command,
 {
     boot_can_frame_t frame = {0};
 
-    frame.id = BOOT_CAN_COMMAND_ID;
+    frame.id = BOOT_CAN_COMMAND_ID(fake.configured_node);
     frame.dlc = BOOT_CAN_MAX_DATA_LENGTH;
     frame.data[0] = BOOT_PROTOCOL_VERSION;
     frame.data[1] = (uint8_t)command;
@@ -293,7 +350,7 @@ static boot_can_frame_t make_data(uint8_t session,
     assert(payload != NULL);
     assert(payload_length >= 1U);
     assert(payload_length <= BOOT_DATA_BYTES_PER_FRAME);
-    frame.id = BOOT_CAN_DATA_ID;
+    frame.id = BOOT_CAN_DATA_ID(fake.configured_node);
     frame.dlc = (uint8_t)(3U + payload_length);
     frame.data[0] = session;
     frame.data[1] = block_sequence;
@@ -331,7 +388,7 @@ static void assert_response(const boot_can_frame_t *response,
                             uint32_t value)
 {
     assert(response != NULL);
-    assert(response->id == BOOT_CAN_RESPONSE_ID);
+    assert(response->id == BOOT_CAN_RESPONSE_ID(fake.configured_node));
     assert(response->dlc == BOOT_CAN_MAX_DATA_LENGTH);
     assert(response->data[0] == BOOT_PROTOCOL_VERSION);
     assert(response->data[1] == (uint8_t)kind);
@@ -640,7 +697,7 @@ static void test_boot_window_ignores_malformed_and_forbidden_broadcast(void)
                     BOOT_COMMAND_DISCOVER,
                     session,
                     UINT32_C(1) |
-                        (BOOT_NODE_ID << 8U) |
+                        ((uint32_t)BOOT_DEFAULT_NODE_ID << 8U) |
                         ((uint32_t)BOOT_PROTOCOL_VERSION << 16U) |
                         ((uint32_t)BOOT_TARGET_CODE << 24U));
     assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
@@ -713,6 +770,103 @@ static void test_run_timeout_forces_handoff_when_ack_cannot_be_queued(void)
     assert(fake.tx_count == 0U);
 }
 
+static void test_dynamic_node_probe_uid_and_reconfiguration(void)
+{
+    static const uint8_t session = UINT8_C(0x66);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+    uint32_t capabilities;
+
+    fake_reset();
+    fake.configured_node = 42U;
+    fake.image_valid = true;
+    bootloader_init();
+    assert(fake.can_init_node == 42U);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    request = make_request(BOOT_COMMAND_PROBE,
+                           session,
+                           BOOT_PROBE_CAPABILITIES,
+                           0U);
+    request.id = BOOT_CAN_BROADCAST_ID;
+    response = exchange(&request);
+    capabilities = boot_protocol_read_u32_le(&response.data[4]);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_PROBE,
+                    session,
+                    capabilities);
+    assert(((capabilities >> 8U) & UINT32_C(0xFF)) == 42U);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+
+    request = make_request(BOOT_COMMAND_INFO,
+                           session,
+                           0U,
+                           BOOT_INFO_UID_WORD_2);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_INFO,
+                    session,
+                    fake.uid_words[2]);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+
+    request = make_request(BOOT_COMMAND_SET_NODE_ID, session, 0U, 7U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_SET_NODE_ID,
+                    session,
+                    7U);
+    assert(fake.stored_node == 7U);
+    assert(fake.boot_request_set);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_RESET);
+}
+
+static void test_application_boot_request_extends_window(void)
+{
+    fake_reset();
+    fake.image_valid = true;
+    fake.boot_request = true;
+    bootloader_init();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+    assert(!fake.boot_request);
+
+    fake.now_ms = BOOT_WINDOW_MS;
+    bootloader_task();
+    assert(bootloader_get_state() == BOOTLOADER_STATE_BOOT_WINDOW);
+    assert(jump_calls == 0U);
+
+    fake.now_ms = BOOT_REQUEST_WINDOW_MS;
+    capture_jump = true;
+    if (setjmp(jump_environment) == 0)
+    {
+        bootloader_task();
+        assert(false);
+    }
+    capture_jump = false;
+    assert(jump_calls == 1U);
+}
+
+static void test_enter_bootloader_command_is_idempotent(void)
+{
+    static const uint8_t session = UINT8_C(0x67);
+    boot_can_frame_t request;
+    boot_can_frame_t response;
+
+    fake_reset();
+    fake.image_valid = true;
+    bootloader_init();
+    request = make_request(BOOT_COMMAND_ENTER_BOOTLOADER, session, 0U, 0U);
+    response = exchange(&request);
+    assert_response(&response,
+                    BOOT_RESPONSE_ACK,
+                    BOOT_COMMAND_ENTER_BOOTLOADER,
+                    session,
+                    0U);
+    assert(bootloader_get_state() == BOOTLOADER_STATE_WAIT_HOST);
+}
+
 int main(void)
 {
     test_start_update_bounds();
@@ -723,6 +877,9 @@ int main(void)
     test_boot_window_ignores_malformed_and_forbidden_broadcast();
     test_metadata_begin_failure_clears_advertised_app_validity();
     test_run_timeout_forces_handoff_when_ack_cannot_be_queued();
+    test_dynamic_node_probe_uid_and_reconfiguration();
+    test_application_boot_request_extends_window();
+    test_enter_bootloader_command_is_idempotent();
 
     puts("test_bootloader: OK");
     return 0;

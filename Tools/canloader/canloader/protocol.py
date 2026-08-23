@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .constants import (
+    BROADCAST_ID,
     COMMAND_ID_BASE,
     DATA_ID_BASE,
     MAX_BLOCK_SIZE,
@@ -34,6 +35,12 @@ def validate_node(node: int) -> None:
 def response_id(node: int) -> int:
     validate_node(node)
     return RESPONSE_ID_BASE + node
+
+
+def node_from_response_id(arbitration_id: int) -> int:
+    node = arbitration_id - RESPONSE_ID_BASE
+    validate_node(node)
+    return node
 
 
 def command_id(node: int) -> int:
@@ -91,6 +98,23 @@ def encode_control_request(
     payload = bytes((PROTOCOL_VERSION, int(command), session, byte3))
     payload += value.to_bytes(4, "little")
     return CanFrame(command_id(node), payload)
+
+
+def encode_broadcast_request(
+    command: Command | int,
+    session: int,
+    *,
+    byte3: int = 0,
+    value: int = 0,
+) -> CanFrame:
+    _require_byte(session, "session", nonzero=True)
+    _require_byte(int(command), "command")
+    _require_byte(byte3, "byte3")
+    if not 0 <= value <= 0xFFFFFFFF:
+        raise ConfigurationError("control value must be an unsigned 32-bit value")
+    payload = bytes((PROTOCOL_VERSION, int(command), session, byte3))
+    payload += value.to_bytes(4, "little")
+    return CanFrame(BROADCAST_ID, payload)
 
 
 def encode_begin_block(

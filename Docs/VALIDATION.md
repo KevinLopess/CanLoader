@@ -1,11 +1,11 @@
-# Validação integrada A–H
+# Validação integrada A–J
 
 > **Hardware validation was not performed.** Este documento é o procedimento a
 > executar; não é um registro de aprovação. Preencha a tabela de resultados
 > durante a bancada e não marque o hardware como validado apenas com base nos
 > builds ou testes sem hardware.
 
-Todos os testes abaixo formam **uma única sessão**, na ordem A–H. Essa ordem
+Todos os testes abaixo formam **uma única sessão**, na ordem A–J. Essa ordem
 estabelece um estado inicial conhecido, valida a atualização normal, provoca uma
 interrupção depois do erase e termina recuperando o mesmo target.
 
@@ -102,6 +102,15 @@ aplicação antes de qualquer update.
 
 ## TESTE B — CAN e INFO
 
+Faça primeiro um inventário não invasivo:
+
+```sh
+python -m canloader ls --interface socketcan --channel can0
+```
+
+Deve existir uma linha para node 1, target `0xF1`, protocolo 1, modo bootloader
+e um UID hexadecimal de 24 dígitos.
+
 Execute:
 
 ```sh
@@ -118,6 +127,7 @@ Application base: 0x08004000
 Application maximum size: 48128 bytes
 Stored image size: 0 bytes
 Stored image CRC: 0x00000000
+Device UID: <24 dígitos hexadecimais>
 ```
 
 O valor de capabilities esperado representa target `0xF1`, protocolo 1, nó 1,
@@ -237,6 +247,43 @@ O update, FINISH e VERIFY devem concluir, o ACK de RUN deve ser recebido e o
 padrão de duas piscadas deve reaparecer. Pressione RESET uma última vez, aguarde
 1500 ms sem tráfego de controle e confirme que a aplicação volta a iniciar.
 
+## TESTE I — descoberta da aplicação e reboot remoto
+
+Com a aplicação de teste executando:
+
+```sh
+python -m canloader ls --interface socketcan --channel can0
+python -m canloader reboot --interface socketcan --channel can0 --node 1
+python -m canloader info --interface socketcan --channel can0 --node 1
+python -m canloader run --interface socketcan --channel can0 --node 1
+```
+
+`ls` deve indicar modo `application`. `reboot` deve receber ACK da aplicação,
+reiniciar o MCU e capturar o bootloader dentro da janela solicitada de 10 s. O
+INFO seguinte deve responder sem RESET físico. Retorne à aplicação com `run`.
+
+## TESTE J — node ID persistente
+
+Entre novamente no bootloader e altere temporariamente o endereço:
+
+```sh
+python -m canloader reboot --interface socketcan --channel can0 --node 1
+python -m canloader set-node 7 --interface socketcan --channel can0 --node 1
+python -m canloader ls --interface socketcan --channel can0
+python -m canloader run --interface socketcan --channel can0 --node 7
+python -m canloader ls --interface socketcan --channel can0
+```
+
+O endereço antigo deve parar de responder; node 7 deve aparecer primeiro em
+modo bootloader e depois em modo application, sempre com o mesmo UID. Restaure o
+estado padrão ao terminar:
+
+```sh
+python -m canloader reboot --interface socketcan --channel can0 --node 7
+python -m canloader set-node 1 --interface socketcan --channel can0 --node 7
+python -m canloader run --interface socketcan --channel can0 --node 1
+```
+
 Ao encerrar a sessão:
 
 ```sh
@@ -255,6 +302,8 @@ sudo ip link set can0 down
 | F | reboot inicia imagem após 1500 ms | não executado |
 | G | interrupção nunca executa imagem parcial | não executado |
 | H | novo update recupera o dispositivo | não executado |
+| I | aplicação aparece no scan e reboot remoto entra no bootloader | não executado |
+| J | node muda, persiste, direciona comandos e volta ao valor 1 | não executado |
 
 Somente substitua `não executado` por `aprovado` ou `reprovado` depois de
 realizar e registrar a observação correspondente no hardware real.

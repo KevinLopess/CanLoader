@@ -7,6 +7,8 @@
 #include "boot_crc32.h"
 #include "boot_protocol.h"
 
+#define TEST_NODE_ID BOOT_DEFAULT_NODE_ID
+
 static void test_crc32_known_vector(void)
 {
     static const uint8_t input[] = "123456789";
@@ -45,7 +47,7 @@ static boot_can_frame_t valid_request_frame(void)
 {
     boot_can_frame_t frame = {0};
 
-    frame.id = BOOT_CAN_COMMAND_ID;
+    frame.id = BOOT_CAN_COMMAND_ID(TEST_NODE_ID);
     frame.dlc = BOOT_CAN_MAX_DATA_LENGTH;
     frame.data[0] = BOOT_PROTOCOL_VERSION;
     frame.data[1] = (uint8_t)BOOT_COMMAND_START_UPDATE;
@@ -61,7 +63,7 @@ static void test_decode_control_request(void)
     boot_protocol_request_t request = {0};
     boot_error_t error = BOOT_ERROR_INTERNAL;
 
-    assert(boot_protocol_decode_request(&frame, &request, &error));
+    assert(boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, &error));
     assert(error == BOOT_ERROR_NONE);
     assert(request.version == BOOT_PROTOCOL_VERSION);
     assert(request.command == BOOT_COMMAND_START_UPDATE);
@@ -70,7 +72,7 @@ static void test_decode_control_request(void)
     assert(request.value == UINT32_C(0x12345678));
 
     frame.id = BOOT_CAN_BROADCAST_ID;
-    assert(boot_protocol_decode_request(&frame, &request, &error));
+    assert(boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, &error));
     assert(error == BOOT_ERROR_NONE);
 }
 
@@ -80,23 +82,23 @@ static void test_rejects_malformed_control_frames(void)
     boot_protocol_request_t request = {0};
     boot_error_t error = BOOT_ERROR_NONE;
 
-    frame.id = BOOT_CAN_DATA_ID;
-    assert(!boot_protocol_decode_request(&frame, &request, &error));
+    frame.id = BOOT_CAN_DATA_ID(TEST_NODE_ID);
+    assert(!boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, &error));
     assert(error == BOOT_ERROR_MALFORMED_FRAME);
 
     frame = valid_request_frame();
     frame.dlc = BOOT_CAN_MAX_DATA_LENGTH - 1U;
-    assert(!boot_protocol_decode_request(&frame, &request, &error));
+    assert(!boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, &error));
     assert(error == BOOT_ERROR_MALFORMED_FRAME);
 
     frame = valid_request_frame();
     frame.data[0] = (uint8_t)(BOOT_PROTOCOL_VERSION + 1U);
-    assert(!boot_protocol_decode_request(&frame, &request, &error));
+    assert(!boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, &error));
     assert(error == BOOT_ERROR_UNSUPPORTED_VERSION);
 
-    assert(!boot_protocol_decode_request(NULL, &request, &error));
-    assert(!boot_protocol_decode_request(&frame, NULL, &error));
-    assert(!boot_protocol_decode_request(&frame, &request, NULL));
+    assert(!boot_protocol_decode_request(NULL, TEST_NODE_ID, &request, &error));
+    assert(!boot_protocol_decode_request(&frame, TEST_NODE_ID, NULL, &error));
+    assert(!boot_protocol_decode_request(&frame, TEST_NODE_ID, &request, NULL));
 }
 
 static boot_protocol_request_t valid_block_request(uint8_t length)
@@ -156,7 +158,7 @@ static boot_can_frame_t valid_data_frame(void)
 {
     boot_can_frame_t frame = {0};
 
-    frame.id = BOOT_CAN_DATA_ID;
+    frame.id = BOOT_CAN_DATA_ID(TEST_NODE_ID);
     frame.dlc = BOOT_CAN_MAX_DATA_LENGTH;
     frame.data[0] = UINT8_C(0x51);
     frame.data[1] = UINT8_C(0x62);
@@ -176,7 +178,7 @@ static void test_decode_data(void)
     boot_error_t error = BOOT_ERROR_INTERNAL;
     static const uint8_t expected[] = {0x10U, 0x20U, 0x30U, 0x40U, 0x50U};
 
-    assert(boot_protocol_decode_data(&frame, &data, &error));
+    assert(boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, &error));
     assert(error == BOOT_ERROR_NONE);
     assert(data.session == UINT8_C(0x51));
     assert(data.block_sequence == UINT8_C(0x62));
@@ -186,7 +188,7 @@ static void test_decode_data(void)
 
     frame.dlc = 4U;
     memset(&data, 0, sizeof(data));
-    assert(boot_protocol_decode_data(&frame, &data, &error));
+    assert(boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, &error));
     assert(data.payload_length == 1U);
     assert(data.payload[0] == UINT8_C(0x10));
     assert(data.payload[1] == UINT8_C(0xFF));
@@ -201,23 +203,23 @@ static void test_rejects_malformed_data_frames(void)
     boot_protocol_data_t data = {0};
     boot_error_t error = BOOT_ERROR_NONE;
 
-    frame.id = BOOT_CAN_COMMAND_ID;
-    assert(!boot_protocol_decode_data(&frame, &data, &error));
+    frame.id = BOOT_CAN_COMMAND_ID(TEST_NODE_ID);
+    assert(!boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, &error));
     assert(error == BOOT_ERROR_MALFORMED_FRAME);
 
     frame = valid_data_frame();
     frame.dlc = 3U;
-    assert(!boot_protocol_decode_data(&frame, &data, &error));
+    assert(!boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, &error));
     assert(error == BOOT_ERROR_MALFORMED_FRAME);
 
     frame = valid_data_frame();
     frame.dlc = BOOT_CAN_MAX_DATA_LENGTH + 1U;
-    assert(!boot_protocol_decode_data(&frame, &data, &error));
+    assert(!boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, &error));
     assert(error == BOOT_ERROR_MALFORMED_FRAME);
 
-    assert(!boot_protocol_decode_data(NULL, &data, &error));
-    assert(!boot_protocol_decode_data(&frame, NULL, &error));
-    assert(!boot_protocol_decode_data(&frame, &data, NULL));
+    assert(!boot_protocol_decode_data(NULL, TEST_NODE_ID, &data, &error));
+    assert(!boot_protocol_decode_data(&frame, TEST_NODE_ID, NULL, &error));
+    assert(!boot_protocol_decode_data(&frame, TEST_NODE_ID, &data, NULL));
 }
 
 static void test_make_response(void)
@@ -225,12 +227,13 @@ static void test_make_response(void)
     boot_can_frame_t frame = {0};
 
     boot_protocol_make_response(&frame,
+                                TEST_NODE_ID,
                                 BOOT_RESPONSE_NACK,
                                 BOOT_COMMAND_ERASE,
                                 UINT8_C(0xA5),
                                 UINT32_C(0x78563412));
 
-    assert(frame.id == BOOT_CAN_RESPONSE_ID);
+    assert(frame.id == BOOT_CAN_RESPONSE_ID(TEST_NODE_ID));
     assert(frame.dlc == BOOT_CAN_MAX_DATA_LENGTH);
     assert(frame.data[0] == BOOT_PROTOCOL_VERSION);
     assert(frame.data[1] == (uint8_t)BOOT_RESPONSE_NACK);
@@ -242,6 +245,7 @@ static void test_make_response(void)
     assert(frame.data[7] == UINT8_C(0x78));
 
     boot_protocol_make_response(NULL,
+                                TEST_NODE_ID,
                                 BOOT_RESPONSE_ACK,
                                 BOOT_COMMAND_INFO,
                                 0U,

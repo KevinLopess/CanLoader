@@ -8,10 +8,12 @@ from canloader.protocol import (
     command_id,
     data_id,
     decode_response,
+    encode_broadcast_request,
     encode_begin_block,
     encode_control_request,
     encode_data_frame,
     encode_response,
+    node_from_response_id,
     response_id,
 )
 
@@ -35,6 +37,13 @@ def test_control_request_encodes_little_endian_value() -> None:
     )
     assert frame.arbitration_id == 0x601
     assert frame.data == bytes((1, 0x10, 0x2A, 0, 0x78, 0x56, 0x34, 0x12))
+
+
+def test_broadcast_probe_and_response_node_are_encoded() -> None:
+    frame = encode_broadcast_request(Command.PROBE, 9, byte3=2)
+    assert frame.arbitration_id == 0x500
+    assert frame.data == bytes((1, Command.PROBE, 9, 2, 0, 0, 0, 0))
+    assert node_from_response_id(0x5AA) == 0x2A
 
 
 def test_begin_block_uses_special_layout() -> None:

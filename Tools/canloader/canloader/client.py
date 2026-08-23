@@ -9,6 +9,9 @@ import time
 
 from .bus import CanBus
 from .constants import (
+    CAPABILITY_APPLICATION_RUNNING,
+    CAPABILITY_APPLICATION_VALID,
+    CAPABILITY_UPDATE_ACTIVE,
     MAX_BLOCK_SIZE,
     MAX_DATA_PAYLOAD,
     MIN_IMAGE_SIZE,
@@ -16,6 +19,7 @@ from .constants import (
     Command,
     InfoSelector,
     NackCode,
+    ProbeSelector,
     ResponseKind,
 )
 from .crc import crc32_iso_hdlc
@@ -32,9 +36,11 @@ from .errors import (
 from .protocol import (
     CanFrame,
     decode_response,
+    encode_broadcast_request,
     encode_begin_block,
     encode_control_request,
     encode_data_frame,
+    node_from_response_id,
     response_id,
     validate_node,
 )
@@ -52,6 +58,156 @@ class DeviceInfo:
     app_max_size: int
     stored_size: int
     stored_crc: int
+    uid_words: tuple[int, int, int]
+
+    @property
+    def uid(self) -> str:
+        return "".join(f"{word:08X}" for word in reversed(self.uid_words))
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredDevice:
+    node: int
+    capabilities: int
+    uid_words: tuple[int, int, int] | None
+
+    @property
+    def uid(self) -> str | None:
+        if self.uid_words is None:
+            return None
+        return "".join(f"{word:08X}" for word in reversed(self.uid_words))
+
+    @property
+    def target_code(self) -> int:
+        return (self.capabilities >> 24) & 0xFF
+
+    @property
+    def protocol_version(self) -> int:
+        return (self.capabilities >> 16) & 0xFF
+
+    @property
+    def application_valid(self) -> bool:
+        return bool(self.capabilities & CAPABILITY_APPLICATION_VALID)
+
+    @property
+    def update_active(self) -> bool:
+        return bool(self.capabilities & CAPABILITY_UPDATE_ACTIVE)
+
+    @property
+    def application_running(self) -> bool:
+        return bool(self.capabilities & CAPABILITY_APPLICATION_RUNNING)
+
+
+class NetworkScanner:
+    def __init__(
+        self,
+        bus: CanBus,
+        *,
+        timeout: float = 0.2,
+        session: int | None = None,
+    ) -> None:
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ConfigurationError("scan timeout must be greater than zero")
+        if session is None:
+            session = secrets.randbelow(0xFF) + 1
+        if not 1 <= session <= 0xFF:
+            raise ConfigurationError("session must be between 1 and 255")
+        self.bus = bus
+        self.timeout = timeout
+        self._session = session
+
+    def _next_session(self) -> int:
+        self._session = (self._session % 0xFF) + 1
+        return self._session
+
+    def _collect(self, selector: ProbeSelector) -> dict[int, int]:
+        session = self._next_session()
+        frame = encode_broadcast_request(
+            Command.PROBE,
+            session,
+            byte3=int(selector),
+        )
+        LOGGER.debug(
+            "TX %03X [%d] %s",
+            frame.arbitration_id,
+            frame.dlc,
+            frame.data.hex(" "),
+        )
+        try:
+            self.bus.send(frame)
+        except CanBusError:
+            raise
+        except Exception as exc:
+            raise CanBusError(f"failed to send CAN frame: {exc}") from exc
+
+        values: dict[int, int] = {}
+        deadline = time.monotonic() + self.timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                response_frame = self.bus.recv(remaining)
+            except CanBusError:
+                raise
+            except Exception as exc:
+                raise CanBusError(f"failed to receive CAN frame: {exc}") from exc
+            if response_frame is None:
+                break
+            LOGGER.debug(
+                "RX %03X [%d] %s",
+                response_frame.arbitration_id,
+                response_frame.dlc,
+                response_frame.data.hex(" "),
+            )
+            if response_frame.is_extended_id:
+                continue
+            try:
+                node = node_from_response_id(response_frame.arbitration_id)
+                response = decode_response(response_frame)
+            except (ConfigurationError, ProtocolError):
+                continue
+            if (
+                response.version != PROTOCOL_VERSION
+                or response.kind is not ResponseKind.ACK
+                or response.command != int(Command.PROBE)
+                or response.session != session
+            ):
+                continue
+            values[node] = response.value
+        return values
+
+    def scan(self) -> list[DiscoveredDevice]:
+        capabilities = self._collect(ProbeSelector.CAPABILITIES)
+        uid_values = [
+            self._collect(ProbeSelector.UID_WORD_0),
+            self._collect(ProbeSelector.UID_WORD_1),
+            self._collect(ProbeSelector.UID_WORD_2),
+        ]
+        devices: list[DiscoveredDevice] = []
+        for node, capability_word in sorted(capabilities.items()):
+            advertised_node = (capability_word >> 8) & 0xFF
+            if advertised_node != node:
+                LOGGER.warning(
+                    "ignoring node %d with mismatched advertised node %d",
+                    node,
+                    advertised_node,
+                )
+                continue
+            words = tuple(values.get(node) for values in uid_values)
+            uid_words = (
+                None
+                if any(word is None for word in words)
+                else (int(words[0]), int(words[1]), int(words[2]))
+            )
+            devices.append(
+                DiscoveredDevice(
+                    node=node,
+                    capabilities=capability_word,
+                    uid_words=uid_words,
+                )
+            )
+        return devices
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +409,21 @@ class BootloaderClient:
             app_max_size=self.info(InfoSelector.APP_MAX_SIZE),
             stored_size=self.info(InfoSelector.STORED_SIZE),
             stored_crc=self.info(InfoSelector.STORED_CRC),
+            uid_words=(
+                self.info(InfoSelector.UID_WORD_0),
+                self.info(InfoSelector.UID_WORD_1),
+                self.info(InfoSelector.UID_WORD_2),
+            ),
         )
+
+    def set_node_id(self, node_id: int) -> int:
+        validate_node(node_id)
+        actual = self._request(Command.SET_NODE_ID, value=node_id)
+        return self._require_ack_value(Command.SET_NODE_ID, actual, node_id)
+
+    def enter_bootloader(self) -> int:
+        actual = self._request(Command.ENTER_BOOTLOADER)
+        return self._require_ack_value(Command.ENTER_BOOTLOADER, actual, 0)
 
     def start_update(self, size: int) -> int:
         actual = self._request(Command.START_UPDATE, value=size)
@@ -450,3 +620,5 @@ class BootloaderClient:
             if not verified:
                 self._abort_best_effort()
             raise
+    ProbeSelector,
+    node_from_response_id,

@@ -6,6 +6,7 @@
 
 #include "boot_can.h"
 #include "boot_config.h"
+#include "boot_device_config.h"
 #include "boot_flash.h"
 #include "boot_image.h"
 #include "boot_metadata.h"
@@ -30,7 +31,9 @@ typedef struct
     uint8_t block_bytes_received;
     uint8_t last_block_sequence;
     uint8_t last_block_length;
+    uint8_t node_id;
     bool app_valid;
+    bool boot_requested;
     bool crc_received;
     bool block_active;
     bool last_block_valid;
@@ -78,6 +81,8 @@ static bool command_known(boot_command_t command)
     {
         case BOOT_COMMAND_DISCOVER:
         case BOOT_COMMAND_INFO:
+        case BOOT_COMMAND_PROBE:
+        case BOOT_COMMAND_SET_NODE_ID:
         case BOOT_COMMAND_START_UPDATE:
         case BOOT_COMMAND_SET_IMAGE_CRC:
         case BOOT_COMMAND_ERASE:
@@ -85,6 +90,7 @@ static bool command_known(boot_command_t command)
         case BOOT_COMMAND_FINISH:
         case BOOT_COMMAND_VERIFY:
         case BOOT_COMMAND_RUN_APPLICATION:
+        case BOOT_COMMAND_ENTER_BOOTLOADER:
         case BOOT_COMMAND_ABORT:
             return true;
 
@@ -104,6 +110,7 @@ static void queue_response(boot_response_kind_t kind,
     }
 
     boot_protocol_make_response(&context.pending_response,
+                                context.node_id,
                                 kind,
                                 command,
                                 session,
@@ -141,18 +148,18 @@ static bool session_matches(uint8_t session)
 
 static uint32_t capability_word(void)
 {
-    uint32_t flags = context.app_valid ? UINT32_C(1) : UINT32_C(0);
+    uint32_t flags = context.app_valid ? BOOT_CAPABILITY_APPLICATION_VALID : 0U;
 
     if ((context.state == BOOTLOADER_STATE_PREPARE_UPDATE) ||
         (context.state == BOOTLOADER_STATE_ERASE) ||
         (context.state == BOOTLOADER_STATE_RECEIVE) ||
         (context.state == BOOTLOADER_STATE_VERIFY))
     {
-        flags |= UINT32_C(2);
+        flags |= BOOT_CAPABILITY_UPDATE_ACTIVE;
     }
 
     return flags |
-           (BOOT_NODE_ID << 8U) |
+           ((uint32_t)context.node_id << 8U) |
            ((uint32_t)BOOT_PROTOCOL_VERSION << 16U) |
            ((uint32_t)BOOT_TARGET_CODE << 24U);
 }
@@ -190,12 +197,101 @@ static void handle_info(const boot_protocol_request_t *request)
             value = boot_metadata_read(&metadata) ? metadata.image_crc32 : 0U;
             break;
 
+        case BOOT_INFO_UID_WORD_0:
+            value = boot_platform_uid_word(0U);
+            break;
+
+        case BOOT_INFO_UID_WORD_1:
+            value = boot_platform_uid_word(1U);
+            break;
+
+        case BOOT_INFO_UID_WORD_2:
+            value = boot_platform_uid_word(2U);
+            break;
+
         default:
             queue_nack(request->command, request->session, BOOT_ERROR_INVALID_COMMAND);
             return;
     }
 
     queue_ack(request->command, request->session, value);
+}
+
+static void handle_probe(const boot_protocol_request_t *request)
+{
+    uint32_t value;
+
+    if (request->value != 0U)
+    {
+        queue_nack(request->command, request->session, BOOT_ERROR_MALFORMED_FRAME);
+        return;
+    }
+
+    switch ((boot_probe_selector_t)request->parameter)
+    {
+        case BOOT_PROBE_CAPABILITIES:
+            value = capability_word();
+            break;
+
+        case BOOT_PROBE_UID_WORD_0:
+            value = boot_platform_uid_word(0U);
+            break;
+
+        case BOOT_PROBE_UID_WORD_1:
+            value = boot_platform_uid_word(1U);
+            break;
+
+        case BOOT_PROBE_UID_WORD_2:
+            value = boot_platform_uid_word(2U);
+            break;
+
+        default:
+            queue_nack(request->command, request->session, BOOT_ERROR_INVALID_COMMAND);
+            return;
+    }
+
+    queue_ack(request->command, request->session, value);
+}
+
+static void handle_set_node_id(const boot_protocol_request_t *request, uint32_t now)
+{
+    const uint32_t requested_node = request->value;
+    boot_flash_status_t status;
+
+    if ((request->parameter != 0U) ||
+        (requested_node < BOOT_MIN_NODE_ID) ||
+        (requested_node > BOOT_MAX_NODE_ID))
+    {
+        queue_nack(request->command, request->session, BOOT_ERROR_INVALID_SIZE);
+        return;
+    }
+    if ((context.state != BOOTLOADER_STATE_BOOT_WINDOW) &&
+        (context.state != BOOTLOADER_STATE_WAIT_HOST) &&
+        (context.state != BOOTLOADER_STATE_READY))
+    {
+        queue_nack(request->command, request->session, BOOT_ERROR_INVALID_STATE);
+        return;
+    }
+
+    if ((uint8_t)requested_node == context.node_id)
+    {
+        queue_ack(request->command, request->session, requested_node);
+        return;
+    }
+
+    status = boot_device_config_store_node((uint8_t)requested_node);
+    if (status != BOOT_FLASH_STATUS_OK)
+    {
+        queue_nack(request->command,
+                   request->session,
+                   (status == BOOT_FLASH_STATUS_ERASE) ? BOOT_ERROR_FLASH_ERASE :
+                                                         BOOT_ERROR_FLASH_WRITE);
+        return;
+    }
+
+    boot_platform_set_boot_request();
+    queue_ack(request->command, request->session, requested_node);
+    set_state(BOOTLOADER_STATE_RESET, now);
 }
 
 static void handle_start_update(const boot_protocol_request_t *request, uint32_t now)
@@ -438,7 +534,7 @@ static void handle_data_frame(const boot_can_frame_t *frame, uint32_t now)
     uint32_t buffer_offset;
     uint8_t expected_payload_length;
 
-    if (!boot_protocol_decode_data(frame, &data, &error))
+    if (!boot_protocol_decode_data(frame, context.node_id, &data, &error))
     {
         queue_nack(BOOT_COMMAND_DATA,
                    (frame->dlc > 0U) ? frame->data[0] : 0U,
@@ -651,7 +747,7 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
     boot_error_t error;
     const bool broadcast = frame->id == BOOT_CAN_BROADCAST_ID;
 
-    if (!boot_protocol_decode_request(frame, &request, &error))
+    if (!boot_protocol_decode_request(frame, context.node_id, &request, &error))
     {
         const boot_command_t command = (frame->dlc > 1U) ?
                                        (boot_command_t)frame->data[1] :
@@ -662,7 +758,8 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
     }
 
     if (broadcast && (request.command != BOOT_COMMAND_DISCOVER) &&
-        (request.command != BOOT_COMMAND_INFO))
+        (request.command != BOOT_COMMAND_INFO) &&
+        (request.command != BOOT_COMMAND_PROBE))
     {
         return;
     }
@@ -688,6 +785,14 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
 
         case BOOT_COMMAND_INFO:
             handle_info(&request);
+            break;
+
+        case BOOT_COMMAND_PROBE:
+            handle_probe(&request);
+            break;
+
+        case BOOT_COMMAND_SET_NODE_ID:
+            handle_set_node_id(&request, now);
             break;
 
         case BOOT_COMMAND_START_UPDATE:
@@ -718,6 +823,20 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
             handle_run(&request, now);
             break;
 
+        case BOOT_COMMAND_ENTER_BOOTLOADER:
+            if ((request.parameter != 0U) || (request.value != 0U))
+            {
+                queue_nack(request.command,
+                           request.session,
+                           BOOT_ERROR_MALFORMED_FRAME);
+            }
+            else
+            {
+                set_state(BOOTLOADER_STATE_WAIT_HOST, now);
+                queue_ack(request.command, request.session, 0U);
+            }
+            break;
+
         case BOOT_COMMAND_ABORT:
             handle_abort(&request, now);
             break;
@@ -728,6 +847,7 @@ static void handle_request(const boot_can_frame_t *frame, uint32_t now)
     }
 
     if ((context.state == BOOTLOADER_STATE_BOOT_WINDOW) &&
+        (request.command != BOOT_COMMAND_PROBE) &&
         context.response_pending &&
         (context.pending_response.data[1] == (uint8_t)BOOT_RESPONSE_ACK))
     {
@@ -761,6 +881,7 @@ static void service_led(uint32_t now)
 
         case BOOTLOADER_STATE_READY:
         case BOOTLOADER_STATE_RUN_APPLICATION:
+        case BOOTLOADER_STATE_RESET:
             force_off = true;
             interval = BOOT_LED_WAIT_MS;
             break;
@@ -827,9 +948,17 @@ void bootloader_init(void)
     context.last_led_ms = now;
     boot_platform_led_set(true);
     context.led_on = true;
+    context.node_id = BOOT_DEFAULT_NODE_ID;
 
-    if ((boot_flash_init() != BOOT_FLASH_STATUS_OK) ||
-        !boot_can_init() || !boot_can_start())
+    if (boot_flash_init() != BOOT_FLASH_STATUS_OK)
+    {
+        set_state(BOOTLOADER_STATE_ERROR, boot_platform_millis());
+        return;
+    }
+
+    context.node_id = boot_device_config_load_node();
+    context.boot_requested = boot_platform_take_boot_request();
+    if (!boot_can_init(context.node_id) || !boot_can_start())
     {
         set_state(BOOTLOADER_STATE_ERROR, boot_platform_millis());
         return;
@@ -873,12 +1002,12 @@ void bootloader_task(void)
             }
 
             now = boot_platform_millis();
-            if ((frame.id == BOOT_CAN_COMMAND_ID) ||
+            if ((frame.id == BOOT_CAN_COMMAND_ID(context.node_id)) ||
                 (frame.id == BOOT_CAN_BROADCAST_ID))
             {
                 handle_request(&frame, now);
             }
-            else if (frame.id == BOOT_CAN_DATA_ID)
+            else if (frame.id == BOOT_CAN_DATA_ID(context.node_id))
             {
                 handle_data_frame(&frame, now);
             }
@@ -894,7 +1023,8 @@ void bootloader_task(void)
     service_transfer_timeout(now);
 
     if ((context.state == BOOTLOADER_STATE_BOOT_WINDOW) &&
-        (elapsed_ms(now, context.state_started_ms) >= BOOT_WINDOW_MS))
+        (elapsed_ms(now, context.state_started_ms) >=
+         (context.boot_requested ? BOOT_REQUEST_WINDOW_MS : BOOT_WINDOW_MS)))
     {
         boot_can_stop();
         boot_image_jump();
@@ -908,6 +1038,16 @@ void bootloader_task(void)
     {
         boot_can_stop();
         boot_image_jump();
+    }
+
+    if ((context.state == BOOTLOADER_STATE_RESET) &&
+        (((!context.response_pending) &&
+          (elapsed_ms(now, context.state_started_ms) >= BOOT_RUN_RESPONSE_DELAY_MS) &&
+          boot_can_tx_idle()) ||
+         (elapsed_ms(now, context.state_started_ms) >= BOOT_RUN_RESPONSE_TIMEOUT_MS)))
+    {
+        boot_can_stop();
+        boot_platform_reset();
     }
 }
 

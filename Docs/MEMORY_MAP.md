@@ -9,7 +9,8 @@ ambiguidades.
 
 | Região | Início | Fim inclusivo | Fim exclusivo | Tamanho |
 |---|---:|---:|---:|---:|
-| Bootloader | `0x08000000` | `0x08003FFF` | `0x08004000` | `0x4000` = 16 KiB |
+| Bootloader code | `0x08000000` | `0x08003BFF` | `0x08003C00` | `0x3C00` = 15 KiB |
+| Device config | `0x08003C00` | `0x08003FFF` | `0x08004000` | `0x400` = 1 KiB |
 | Aplicação | `0x08004000` | `0x0800FBFF` | `0x0800FC00` | `0xBC00` = 47 KiB = 48128 bytes |
 | Metadata | `0x0800FC00` | `0x0800FFFF` | `0x08010000` | `0x400` = 1 KiB |
 | SRAM | `0x20000000` | `0x20004FFF` | `0x20005000` | `0x5000` = 20 KiB |
@@ -17,7 +18,9 @@ ambiguidades.
 ```text
 Flash
 0x08000000  +----------------------------------+
-            | Bootloader                       | 16 KiB
+            | Bootloader code                  | 15 KiB
+0x08003C00  +----------------------------------+
+            | Device config / node ID          | 1 KiB
 0x08004000  +----------------------------------+
             | Aplicacao relocada               | 47 KiB
             | vector table em 0x08004000        |
@@ -26,8 +29,9 @@ Flash
 0x08010000  +----------------------------------+
 ```
 
-`STM32F103C8TX_FLASH.ld` limita o bootloader a 16 KiB e possui uma asserção
-para que seu fim seja exatamente `0x08004000`. `TestApplication/linker.ld`
+`STM32F103C8TX_FLASH.ld` limita o código do bootloader a 15 KiB, reserva a
+página seguinte para configuração e possui asserções para que a partição total
+termine exatamente em `0x08004000`. `TestApplication/linker.ld`
 origina a aplicação em `0x08004000`, limita-a a `0xBC00` e verifica que seu fim
 seja `0x0800FC00`.
 
@@ -44,12 +48,32 @@ Para o STM32F103C8Tx configurado:
   halfword; o byte de preenchimento não integra `image_size` nem o CRC;
 - o erase da aplicação é arredondado para cima até a próxima página, mas
   nunca ultrapassa a região de aplicação.
+- a página `DEVICE_CONFIG` pertence à partição do bootloader, não é apagada por
+  updates da aplicação e não aparece no `.bin` normal do bootloader.
 
 O port recebe uma região (`APPLICATION` ou `METADATA`) e um offset relativo.
 Ele valida overflow, limite, alinhamento e comprimento antes de calcular um
 endereço físico. Não existe comando no protocolo que permita ao host escolher um
 endereço absoluto. O bootloader e a página de metadata não pertencem à região
 gravável como aplicação.
+
+## Configuração persistente do dispositivo
+
+A página em `0x08003C00` contém um registro little-endian de 12 bytes. Quando a
+página está apagada, incompleta ou corrompida, o firmware usa o node default 1.
+
+| Offset | Tamanho | Campo | Regra |
+|---:|---:|---|---|
+| `0..3` | 4 | `magic` | `0x46434C43`, bytes ASCII `CLCF` |
+| `4..5` | 2 | `format_version` | `1` |
+| `6` | 1 | `node_id` | `1..127` |
+| `7` | 1 | `node_id_inv` | complemento bit a bit de `node_id` |
+| `8..11` | 4 | `crc32` | CRC-32/ISO-HDLC dos bytes `0..7` |
+
+`SET_NODE_ID` apaga somente essa página, grava e relê o registro antes do ACK.
+Uma perda de energia durante a operação pode fazer o target voltar ao node 1;
+ela não afeta bootloader, aplicação ou metadata. Um erase total por SWD também
+remove a configuração.
 
 Na inicialização, o port F1 lê o registrador de tamanho da Flash e recusa operar
 se detectar menos de 64 KiB. Erase e programação são conferidos por readback.

@@ -6,6 +6,9 @@
 
 uint32_t boot_platform_millis(void);
 void boot_platform_led_set(bool on);
+uint32_t boot_platform_uid_word(uint8_t index);
+bool boot_platform_take_boot_request(void);
+void boot_platform_set_boot_request(void);
 void boot_platform_prepare_handoff(void);
 void boot_platform_jump(uint32_t vector_address,
                         uint32_t initial_stack_pointer,
