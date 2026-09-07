@@ -1,13 +1,16 @@
-# CanLoader v2
+# CanLoader
 
-CanLoader é um bootloader *single-slot* para atualização de firmware do
-STM32F103C8Tx por CAN clássico a 500 kbit/s. A versão atual fala somente o
-perfil CanLoader v2: identificadores estendidos de 29 bits, NAME e Address
-Claiming J1939, TP RTS/CTS/BAM, um subconjunto de DM14/DM15/DM16 para acesso à
-memória e um PGN Proprietary A para o ciclo de vida da imagem.
+CanLoader é um bootloader *single-slot* para atualização de firmware de
+microcontroladores STM32 por CAN clássico a 500 kbit/s. A lógica comum está
+separada dos ports de hardware e esta revisão possui dois alvos compiláveis:
+STM32F103C8Tx e NUCLEO-G0B1RE. O perfil CanLoader usa identificadores
+estendidos de 29 bits, NAME e Address Claiming J1939, TP RTS/CTS/BAM, um
+subconjunto de DM14/DM15/DM16 e um PGN Proprietary A para o ciclo de vida da
+imagem.
 
-Não existe fallback para o protocolo v1 de IDs de 11 bits. Host, bootloader e
-aplicação de referência precisam ser v2.
+Um formato preliminar com IDs de 11 bits foi descartado durante o
+desenvolvimento. Host, bootloader e aplicação de referência utilizam somente o
+formato atual, identificado internamente pelo valor `0x02`.
 
 > **Escopo normativo:** o projeto implementa mecanismos de J1939-21/J1939-81 e
 > um perfil DM baseado em material público histórico de J1939-73. Ele não foi
@@ -17,7 +20,8 @@ aplicação de referência precisam ser v2.
 
 ## Estado atual
 
-- target STM32F103C8Tx, 64 KiB de Flash e 20 KiB de SRAM;
+- ports para STM32F103C8Tx/bxCAN/Cortex-M3 e
+  STM32G0B1RE/FDCAN/Cortex-M0+;
 - CAN clássico, 500 kbit/s, quadros de dados estendidos de 29 bits;
 - preferred Source Address do target `0x80`; ferramenta de serviço `0xF9`;
 - NAME de desenvolvimento derivado deterministicamente do UID96 do STM32;
@@ -28,13 +32,17 @@ aplicação de referência precisam ser v2.
 - CRC-32/ISO-HDLC, validação de vetores e metadata transacional;
 - entrada remota no bootloader a partir da aplicação;
 - host Python para SLCAN no macOS e SocketCAN no Linux;
-- testes C nativos e Python, além de aplicação relocada para ensaio em placa.
+- testes C nativos executados com as configurações dos dois targets;
+- aplicações de referência relocadas para os dois mapas de memória.
 
-A validação elétrica e funcional em hardware continua sendo uma etapa separada.
-Execute [VALIDATION.md](Docs/VALIDATION.md) e registre as evidências antes de
-considerar uma versão liberada.
+A sessão física já registrada no repositório cobre o STM32F103. O port da
+NUCLEO-G0B1RE compila e passa pelas verificações automatizadas, mas ainda exige
+validação elétrica e funcional na placa. Consulte
+[STM32G0B1RE.md](Docs/STM32G0B1RE.md) antes de gravá-la.
 
-## Mapa de memória
+## Mapas de memória
+
+### STM32F103C8Tx
 
 | Região | Intervalo | Tamanho |
 |---|---:|---:|
@@ -43,28 +51,53 @@ considerar uma versão liberada.
 | aplicação | `0x08005000..0x0800FBFF` | 43 KiB / 44032 bytes |
 | metadata | `0x0800FC00..0x0800FFFF` | 1 KiB |
 
-A aplicação deve ser linkada em `0x08005000`; binários antigos linkados em
-`0x08004000` não são válidos no v2 atual.
+A aplicação deve ser linkada em `0x08005000`; binários de protótipos internos
+linkados em `0x08004000` não são válidos no formato atual.
 
-O build integrado medido nesta revisão ocupa `text=16456`, `data=12` e
-`bss=1648` bytes. `text+data=16468` deixa 2988 bytes na região
-de código de 19456 bytes. Esses números são uma fotografia do build atual e
-devem ser medidos novamente antes da entrega final.
+### STM32G0B1RE
+
+| Região | Intervalo | Tamanho |
+|---|---:|---:|
+| código do bootloader | `0x08000000..0x080077FF` | 30 KiB |
+| configuração NAME/SA | `0x08007800..0x08007FFF` | 2 KiB |
+| aplicação | `0x08008000..0x0807F7FF` | 478 KiB / 489472 bytes |
+| metadata | `0x0807F800..0x0807FFFF` | 2 KiB |
+
+A aplicação G0 deve ser linkada em `0x08008000`. Os valores são definidos nos
+headers de target e conferidos pelos dois linker scripts, não inferidos pela
+ferramenta host.
 
 ## Hardware
 
-| Item | Configuração |
-|---|---|
-| MCU | STM32F103C8Tx, Cortex-M3 |
-| Clock | HSE 8 MHz, PLL ×9, SYSCLK/HCLK 72 MHz, PCLK1 36 MHz |
-| CAN | bxCAN normal, 500 kbit/s, prescaler 4, BS1 13 TQ, BS2 4 TQ, SJW 1 TQ |
-| Pinos | PA11/CAN_RX e PA12/CAN_TX |
-| LED | PC13, ativo em nível baixo |
-| Flash | página de erase 1024 bytes, programação por halfword |
+| Item | STM32F103C8Tx | NUCLEO-G0B1RE |
+|---|---|---|
+| núcleo | Cortex-M3 | Cortex-M0+ |
+| clock | 72 MHz, PCLK1 36 MHz | 64 MHz, PCLK1 64 MHz |
+| controlador | bxCAN | FDCAN1 em modo CAN clássico |
+| bit timing | prescaler 4, BS1 13, BS2 4, SJW 1 | prescaler 8, TSEG1 13, TSEG2 2, SJW 2 |
+| pinos | PA11 RX, PA12 TX | PC4 RX, PC5 TX, AF3 |
+| LED | PC13, ativo baixo | PA5/LD4, ativo alto |
+| Flash | erase 1 KiB, programa 2 B | erase 2 KiB, programa 8 B |
 
 O STM32 precisa de transceptor CAN externo. Conecte CAN_H, CAN_L e GND comum e
 use 120 Ω em cada extremidade física do barramento. PA11/PA12 não podem ser
 ligados diretamente ao par diferencial.
+
+## Bare-metal, CMSIS e HAL
+
+O CanLoader é bare-metal: não usa RTOS, scheduler, heap ou threads. CMSIS
+fornece startup, definições do núcleo Cortex-M e acesso aos registradores do
+processador. A HAL é usada somente na inicialização dos targets e nos ports de
+CAN, Flash e plataforma; ela não faz parte da máquina de estados nem do
+protocolo comum.
+
+A portabilidade vem dos contratos em `Portable/Inc`, não da HAL. O alvo pode
+implementar esses contratos com HAL, LL ou acesso direto a registradores. A
+regra atual mantém a HAL nos adaptadores STM32 para reduzir o risco de erros em
+clock, Flash e FDCAN, permitindo substituições pontuais quando uma medição de
+tamanho ou tempo justificar. `make check-portability` falha caso uma dependência
+HAL/LL ou de dispositivo STM32 seja introduzida em `Application`, `Protocol`,
+`Portable/Inc` ou `Config`.
 
 ## Build e testes
 
@@ -75,12 +108,24 @@ Pré-requisitos principais:
 - STM32CubeProgrammer/ST-LINK para a instalação inicial;
 - `python-can` e `pyserial` para o host.
 
-Na raiz do repositório:
+Na raiz do repositório, o F103 permanece o target padrão:
 
 ```sh
 make bootloader
 make test-application
 make test
+```
+
+Para a NUCLEO-G0B1RE:
+
+```sh
+make TARGET=stm32g0b1re all
+```
+
+Para compilar as duas variantes em sequência:
+
+```sh
+make all-targets
 ```
 
 Artefatos principais:
@@ -89,9 +134,11 @@ Artefatos principais:
 |---|---|
 | `make bootloader` | `build/bootloader/CanLoader.{elf,bin,hex,map,list}` |
 | `make test-application` | `TestApplication/build/canloader_test_app.{elf,bin,hex,map}` |
+| `make TARGET=stm32g0b1re all` | `build/stm32g0b1re/bootloader/CanLoader.*` e `TestApplication/build/stm32g0b1re/canloader_test_app.*` |
 | `make test-c` | testes nativos de protocolo, TP, claim, FSM, config e metadata |
 | `make test-python` | serialização, scanner, cliente, TP, retries e CLI |
-| `make test` | testes C e Python |
+| `make check-portability` | verifica que HAL/LL/CMSIS de dispositivo não vazaram para o núcleo comum |
+| `make test` | fronteira de portabilidade, testes C e testes Python |
 
 O Makefile procura primeiro o toolchain empacotado no STM32CubeIDE e depois
 `arm-none-eabi-*` no `PATH`.
@@ -133,8 +180,9 @@ canloader ls \
   --verbose
 ```
 
-Todos os frames v2 são estendidos. Em uma captura Lawicel/SLCAN eles aparecem
-como frames `T`; frames `t` de 11 bits são v1 ou tráfego alheio.
+Todos os quadros do formato atual são estendidos. Em uma captura Lawicel/SLCAN
+eles aparecem como quadros `T`; quadros `t` de 11 bits pertencem ao protótipo
+interno anterior ou a tráfego alheio.
 
 Depois de obter o NAME com `ls`, bloqueie a identidade nas operações mutáveis:
 
@@ -202,9 +250,11 @@ Request/Address Claimed + IDENTIFY
         -> RUN opcional
 ```
 
-O bloco de escrita é 100 bytes, salvo o último. O ERASE expressa quantidade de
-páginas de 1024 bytes, não bytes. A sessão proprietária não ocupa o campo
-`Key/User_Level` de DM14; este perfil transmite `0xFFFF`.
+O target informa o tamanho do bloco na resposta a `START_UPDATE`: 100 bytes no
+F103 e 96 bytes no G0. O seletor `INFO FLASH_ERASE_UNIT_SIZE` informa a unidade
+usada para calcular o `length` de ERASE: 1024 ou 2048 bytes, respectivamente.
+A sessão proprietária não ocupa o campo `Key/User_Level` de DM14; este perfil
+transmite `0xFFFF`.
 
 ## Aplicação e retorno ao bootloader
 
@@ -221,7 +271,7 @@ canloader reboot --interface slcan --channel "$PORT" \
 
 ## LED
 
-| Estado | PC13 |
+| Estado | LED do target |
 |---|---|
 | boot window com imagem válida | aceso por até 1500 ms; até 10000 ms após pedido da aplicação |
 | aguardando host | alterna a cada 500 ms |
@@ -238,7 +288,10 @@ Application/             FSM, configuração, metadata, imagem e handoff
 Protocol/                J1939, Address Claim, TP, CanLoader e CRC
 Portable/Inc/            contratos de CAN, Flash e plataforma
 Portable/stm32f1/Src/    HAL/bxCAN/FPEC/Cortex-M3
+Portable/stm32g0/Src/    HAL/FDCAN/Flash/Cortex-M0+
 Config/                  mapa, NAME default, limites e timers
+Config/targets/          parâmetros físicos de cada target
+Targets/stm32g0b1re/     startup, inicialização e linker da NUCLEO
 Tools/canloader/         pacote Python e CLI
 TestApplication/         aplicação relocada de validação
 Tests/                   testes C e Python sem hardware
@@ -248,9 +301,10 @@ Docs/                    contrato, arquitetura, memória e evidências
 ## Documentação
 
 - [Implementação técnica completa](Docs/IMPLEMENTACAO_BOOTLOADER.md)
-- [Contrato on-wire v2](Docs/PROTOCOL.md)
-- [Migração incompatível v1 → v2](Docs/MIGRATION_V1_TO_V2.md)
+- [Contrato on-wire](Docs/PROTOCOL.md)
+- [Histórico da mudança do protótipo interno](Docs/MIGRATION_V1_TO_V2.md)
 - [Arquitetura e portabilidade](Docs/ARCHITECTURE.md)
+- [Port da NUCLEO-G0B1RE](Docs/STM32G0B1RE.md)
 - [Mapa de memória e formatos persistentes](Docs/MEMORY_MAP.md)
 - [Plano de validação](Docs/VALIDATION.md)
 - [Limitações e ameaças](Docs/LIMITATIONS.md)

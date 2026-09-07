@@ -27,8 +27,6 @@
                                               BOOT_FLASH_PROGRAM_UNIT)
 #define FAKE_ACCESS_LOG_CAPACITY              64U
 
-_Static_assert(BOOT_FLASH_PROGRAM_UNIT == 2U,
-               "marker tear tests expect the STM32F103 half-word program unit");
 _Static_assert(TEST_METADATA_SERIALIZED_SIZE <= BOOT_METADATA_PAGE_SIZE,
                "serialized metadata must fit its Flash page");
 

@@ -1,6 +1,6 @@
 # Ferramenta host CanLoader
 
-Cliente Python 3.10+ exclusivo do protocolo CanLoader v2 sobre J1939. A CLI
+Cliente Python 3.10+ exclusivo do protocolo atual do CanLoader sobre J1939. A CLI
 usa `python-can`; as camadas de protocolo aceitam um barramento injetado e são
 testadas sem hardware CAN.
 
@@ -19,8 +19,9 @@ bitrate explicitamente ao adaptador; para SeeedStudio também força
 
 O host reivindica seu próprio endereço J1939, envia um Request global do PGN
 Address Claimed e coleta pares `NAME`/endereço. Depois tenta `IDENTIFY` de forma
-dirigida. Só marca um dispositivo como CanLoader quando endereço, versão 2,
-target code `0xF1` e flags J1939/Address Claim/TP RX são coerentes:
+dirigida. Só marca um dispositivo como CanLoader quando endereço, discriminador
+interno de formato `0x02`, target code suportado e flags J1939/Address Claim/TP
+RX são coerentes:
 
 ```bash
 python -m canloader ls --interface socketcan --channel can0
@@ -32,6 +33,8 @@ Address Claimed e trava o NAME antes de qualquer operação. A atualização é
 interrompida se outro NAME assumir o endereço. Antes de uma operação pública,
 o cliente também exige `IDENTIFY` compatível e reutiliza essa validação enquanto
 NAME/SA permanecem bloqueados; mudança de rota invalida o cache.
+
+Os target codes aceitos são `0xF1` (STM32F103C8) e `0xB1` (STM32G0B1RE).
 
 Se o Tool já operacional perder seu próprio SA para um NAME numericamente
 menor, ele invalida rota/perfil, escolhe um fallback AAC livre, repete Address
@@ -74,7 +77,7 @@ python -m canloader ls \
 ```
 
 Se necessário, informe também `--tty-baudrate 115200`. O backend deve suportar
-quadros Lawicel `T` (CAN 29 bits); o protocolo v2 não possui fallback para IDs
+quadros Lawicel `T` (CAN 29 bits); o protocolo atual não possui fallback para IDs
 CAN de 11 bits.
 
 Para um adaptador suportado pelo backend `seeedstudio`, troque a interface e
@@ -90,8 +93,10 @@ O fluxo é:
 2. `IDENTIFY`; se a aplicação estiver ativa, `ENTER_BOOTLOADER` e nova
    confirmação de Address Claimed para o mesmo NAME.
 3. Manifesto em Proprietary A (`START_UPDATE` com tamanho e `SET_IMAGE_CRC`).
-4. `DM14 ERASE`, `DM15 PROCEED/COMPLETED` e fechamento DM14.
-5. Para cada bloco de até 100 bytes, `DM14 WRITE`, DM16 e confirmação DM15.
+4. consulta da unidade de apagamento por INFO, seguida de `DM14 ERASE`,
+   `DM15 PROCEED/COMPLETED` e fechamento DM14;
+5. para cada bloco anunciado pelo target (100 B no F103 e 96 B no G0),
+   `DM14 WRITE`, DM16 e confirmação DM15.
    DM16 com mais de 7 bytes usa TP.RTS/CTS; firmware nunca usa BAM.
 6. `FINALIZE`, `VERIFY` e, com `--run`, `RUN_APPLICATION`.
 
@@ -105,7 +110,8 @@ As opções principais são `--timeout`, `--transport-timeout`,
 Commanded Address quando claim/IDENTIFY não confirmam a mudança. O cliente
 aguarda `transport_timeout` antes de sobrepor um BAM parcial. O firmware deve
 conter ao menos SP inicial e vetor de reset
-(8 bytes) e caber em `APP_MAX_SIZE`.
+(8 bytes) e caber em `APP_MAX_SIZE`. A ferramenta não presume o mapa do MCU:
+ela lê `APP_BASE`, `APP_MAX_SIZE` e `FLASH_ERASE_UNIT_SIZE` via `INFO`.
 
 ## Testes
 

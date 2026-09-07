@@ -253,6 +253,7 @@ def _run_command(args: argparse.Namespace) -> None:
             print(f"Capabilities: 0x{info.capabilities:08X}")
             print(f"Application base: 0x{info.app_base:08X}")
             print(f"Application maximum size: {info.app_max_size} bytes")
+            print(f"Flash erase unit: {info.flash_erase_unit_size} bytes")
             print(f"Stored image size: {info.stored_size} bytes")
             print(f"Stored image CRC: 0x{info.stored_crc:08X}")
             print(f"Device UID: {info.uid}")

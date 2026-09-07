@@ -378,6 +378,9 @@ static void handle_info(const boot_protocol_request_t *request)
         case BOOT_INFO_SOURCE_ADDRESS:
             value = local_address();
             break;
+        case BOOT_INFO_FLASH_ERASE_UNIT_SIZE:
+            value = BOOT_FLASH_PAGE_SIZE;
+            break;
         default:
             (void)queue_nack(request, BOOT_ERROR_INVALID_COMMAND);
             return;

@@ -11,6 +11,7 @@ from canloader.constants import (
     CAPABILITY_APPLICATION_VALID,
     REQUIRED_PROFILE_CAPABILITIES,
     TARGET_CODE,
+    TARGET_CODE_STM32G0B1RE,
     FLASH_ERASE_BLOCK_SIZE,
     GLOBAL_ADDRESS,
     PGN_COMMANDED_ADDRESS,
@@ -69,6 +70,8 @@ class V2Device:
         application_running: bool = False,
         corrupt_verify: bool = False,
         target_code: int = TARGET_CODE,
+        flash_erase_unit_size: int = FLASH_ERASE_BLOCK_SIZE,
+        advertises_erase_unit: bool = True,
         profile_capabilities: int = REQUIRED_PROFILE_CAPABILITIES,
     ) -> None:
         self.address = address
@@ -78,6 +81,8 @@ class V2Device:
         self.application_running = application_running
         self.corrupt_verify = corrupt_verify
         self.target_code = target_code
+        self.flash_erase_unit_size = flash_erase_unit_size
+        self.advertises_erase_unit = advertises_erase_unit
         self.profile_capabilities = profile_capabilities
         self.expected_size = 0
         self.expected_crc = 0
@@ -206,6 +211,17 @@ class V2Device:
                     self._reboot_pending = False
                     bus.queue(encode_address_claim(self.address, self.name))
             elif command is Command.INFO:
+                if (
+                    request.parameter == InfoSelector.FLASH_ERASE_UNIT_SIZE
+                    and not self.advertises_erase_unit
+                ):
+                    self._queue_response(
+                        bus,
+                        request,
+                        NackCode.INVALID_COMMAND,
+                        kind=ResponseKind.NACK,
+                    )
+                    return
                 values = {
                     InfoSelector.CAPABILITIES: self.capabilities,
                     InfoSelector.APP_BASE: self.app_base,
@@ -218,6 +234,7 @@ class V2Device:
                     InfoSelector.NAME_LOW: self.name.value & 0xFFFFFFFF,
                     InfoSelector.NAME_HIGH: self.name.value >> 32,
                     InfoSelector.SOURCE_ADDRESS: self.address,
+                    InfoSelector.FLASH_ERASE_UNIT_SIZE: self.flash_erase_unit_size,
                 }
                 self._queue_response(bus, request, values[InfoSelector(request.parameter)])
             elif command is Command.START_UPDATE:
@@ -254,7 +271,7 @@ class V2Device:
             if request.command is Dm14Command.ERASE:
                 assert request.pointer == self.app_base
                 assert request.length == math.ceil(
-                    self.expected_size / FLASH_ERASE_BLOCK_SIZE
+                    self.expected_size / self.flash_erase_unit_size
                 )
                 if self.erase_completed:
                     self._queue_dm15(
@@ -492,6 +509,13 @@ def test_identify_rejects_wrong_product_or_incomplete_profile(
         client.identify()
 
 
+def test_identify_accepts_stm32g0b1re_target() -> None:
+    device = V2Device(target_code=TARGET_CODE_STM32G0B1RE)
+    client = make_client(device_bus(device), device, target_name=device.name)
+
+    assert client.identify() == device.capabilities
+
+
 @pytest.mark.parametrize(
     ("method", "args"),
     [
@@ -688,6 +712,30 @@ def test_full_update_uses_dm14_dm16_rts_cts_and_only_selected_device() -> None:
         if identifier_from_frame(frame).pgn == PGN_TP_CM
     ]
     assert tp_controls == [TpControl.RTS, TpControl.RTS]
+
+
+def test_update_uses_erase_unit_advertised_by_stm32g0b1re() -> None:
+    device = V2Device(
+        target_code=TARGET_CODE_STM32G0B1RE,
+        flash_erase_unit_size=2048,
+        app_max_size=8192,
+    )
+    client = make_client(device_bus(device), device, target_name=device.name)
+
+    result = client.update(bytes(index & 0xFF for index in range(2050)))
+
+    assert result.size == 2050
+    assert device.dm14_commands[0] is Dm14Command.ERASE
+    assert device.flash[:2050] == bytes(index & 0xFF for index in range(2050))
+
+
+def test_update_falls_back_for_pre_selector_11_firmware() -> None:
+    device = V2Device(advertises_erase_unit=False)
+    client = make_client(device_bus(device), device, target_name=device.name)
+
+    result = client.update(bytes(range(113)))
+
+    assert result.size == 113
 
 
 def test_short_final_block_uses_single_frame_dm16() -> None:

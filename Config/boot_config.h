@@ -3,28 +3,23 @@
 
 #include <stdint.h>
 
-/* Target memory map: STM32F103C8, 64 KiB Flash and 20 KiB SRAM. */
-#define BOOT_FLASH_BASE_ADDRESS       UINT32_C(0x08000000)
-#define BOOT_FLASH_TOTAL_SIZE         UINT32_C(0x00010000)
-#define BOOTLOADER_FLASH_SIZE         UINT32_C(0x00005000)
-#define BOOTLOADER_CODE_SIZE          UINT32_C(0x00004C00)
-#define BOOT_DEVICE_CONFIG_PAGE_SIZE  UINT32_C(0x00000400)
+#if defined(BOOT_TARGET_STM32G0B1RE)
+#include "targets/boot_target_stm32g0b1re.h"
+#elif defined(BOOT_TARGET_STM32F103C8) || !defined(BOOT_TARGET_STM32G0B1RE)
+/* Keep STM32F103C8 as the default for host-side tests and existing builds. */
+#include "targets/boot_target_stm32f103c8.h"
+#else
+#error "Unsupported CanLoader target"
+#endif
+
 #define BOOT_DEVICE_CONFIG_ADDRESS    (BOOT_FLASH_BASE_ADDRESS + BOOTLOADER_CODE_SIZE)
-#define BOOT_APPLICATION_ADDRESS      (BOOT_FLASH_BASE_ADDRESS + BOOTLOADER_FLASH_SIZE)
-#define BOOT_METADATA_PAGE_SIZE       UINT32_C(0x00000400)
 #define BOOT_METADATA_ADDRESS         (BOOT_FLASH_BASE_ADDRESS + BOOT_FLASH_TOTAL_SIZE - BOOT_METADATA_PAGE_SIZE)
 #define BOOT_APPLICATION_MAX_SIZE     (BOOT_METADATA_ADDRESS - BOOT_APPLICATION_ADDRESS)
 
-#define BOOT_SRAM_START_ADDRESS       UINT32_C(0x20000000)
-#define BOOT_SRAM_SIZE                UINT32_C(0x00005000)
 #define BOOT_SRAM_END_ADDRESS         (BOOT_SRAM_START_ADDRESS + BOOT_SRAM_SIZE)
-
-#define BOOT_FLASH_PAGE_SIZE          UINT32_C(1024)
-#define BOOT_FLASH_PROGRAM_UNIT       UINT32_C(2)
 
 /* SAE J1939 profile. All application frames use 29-bit CAN identifiers. */
 #define BOOT_PROTOCOL_VERSION                    UINT8_C(2)
-#define BOOT_TARGET_CODE              UINT8_C(0xF1)
 
 #define BOOT_J1939_PRIORITY                       UINT8_C(6)
 #define BOOT_J1939_GLOBAL_ADDRESS                 UINT8_C(0xFF)
@@ -48,7 +43,6 @@
 #define BOOT_J1939_NAME_INDUSTRY_GROUP            UINT8_C(0)
 #define BOOT_J1939_NAME_ARBITRARY_ADDRESS_CAPABLE 1U
 
-#define BOOT_TRANSFER_BLOCK_SIZE      UINT32_C(100)
 #define BOOT_RX_BUDGET_PER_TASK       UINT32_C(8)
 #define BOOT_TX_QUEUE_CAPACITY        UINT32_C(8)
 #define BOOT_J1939_TP_CTS_WINDOW      UINT8_C(8)
@@ -64,8 +58,6 @@
 #define BOOT_LED_FAST_MS              UINT32_C(125)
 #define BOOT_LED_WAIT_MS              UINT32_C(500)
 #define BOOT_LED_ERROR_MS             UINT32_C(100)
-#define BOOT_LED_ACTIVE_LOW           1U
-
 #define BOOT_METADATA_MAGIC           UINT32_C(0x444D4C43) /* "CLMD" in little endian. */
 #define BOOT_METADATA_FORMAT_VERSION  UINT16_C(1)
 

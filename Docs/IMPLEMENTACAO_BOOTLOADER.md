@@ -1,27 +1,35 @@
-# Implementação técnica completa do CanLoader v2
+# Implementação técnica completa do CanLoader
 
 | Campo | Valor |
 |---|---|
-| target de referência | STM32F103C8Tx / Cortex-M3 / Blue Pill |
-| protocolo on-wire | CanLoader v2, exclusivamente |
+| targets implementados | STM32F103C8Tx/Cortex-M3 e STM32G0B1RE/Cortex-M0+ |
+| protocolo on-wire | formato atual do CanLoader, exclusivamente |
 | enlace | CAN clássico, CEFF de 29 bits, 500 kbit/s |
-| estado da evidência | build e testes automatizados; campanha HIL ainda obrigatória |
+| estado da evidência | F103 com campanha HIL parcial; G0 com build/testes, HIL pendente |
 | fonte de verdade | código, linkers, testes e pacote Python deste repositório |
 
-## 1. Finalidade, versão e estado
+## 1. Finalidade, formato e estado
 
 Este documento registra como o bootloader foi construído, quais requisitos
 dirigiram as decisões e quais garantias a implementação realmente oferece. Ele
 cobre firmware embarcado, aplicação de referência, ferramenta host, protocolo,
 persistência, build, testes e limitações.
 
-O sistema atual é **v2-only**:
+O sistema aceita somente o formato atual. O número 2 é um discriminador interno
+do contrato on-wire, não o nome de uma segunda versão lançada:
 
 - `BOOT_PROTOCOL_VERSION=2` no target;
 - `PROTOCOL_VERSION=2` no pacote Python;
 - todos os frames de aplicação usam CAN clássico com ID estendido de 29 bits;
 - não há parser, filtro, resposta ou fallback para os IDs standard do v1;
-- toda aplicação atual deve ser linkada em `0x08005000`.
+- cada aplicação deve ser linkada no `APP_BASE` do target: `0x08005000` no
+  F103 ou `0x08008000` no G0B1RE.
+
+As seções históricas e as medições detalhadas deste documento usam o F103 como
+target de referência do TCC. O segundo port, seus arquivos, mapa, ligações e
+estado de validação estão em [STM32G0B1RE.md](STM32G0B1RE.md). A existência de
+dois ports comprova reutilização das camadas comuns, mas não autoriza afirmar
+compatibilidade automática com qualquer STM32.
 
 O contrato byte a byte completo está em [PROTOCOL.md](PROTOCOL.md). A mudança
 incompatível e sua justificativa estão em
@@ -94,12 +102,16 @@ O bootloader deve:
 - CAN FD, ETP e payloads acima de 1785 bytes;
 - READ remoto, DM18, EDCP ou seed-key;
 - provisionamento remoto do NAME de produção;
-- port funcional para outro MCU;
+- ports para famílias STM32 além de F1 e G0B1;
 - certificação SAE ou validação física já concluída.
 
 ## 3. Requisitos de construção
 
 ### 3.1 Hardware e plataforma
+
+Os requisitos HW-01 a HW-08 abaixo descrevem o primeiro target F103. A variante
+G0 aplica os mesmos objetivos com FDCAN1, PC4/PC5, LD4/PA5, páginas de 2 KiB e
+programação de 8 B, conforme o documento específico do port.
 
 | ID | Requisito | Implementação/verificação |
 |---|---|---|
@@ -544,8 +556,9 @@ laboratório `0xA000000000000001`; ambos são configuráveis. `canloader ls`:
 3. coleta todos os NAME/SA, inclusive Cannot Claim;
 4. preserva conflito em vez de sobrescrever um mapa por SA;
 5. envia IDENTIFY individual a cada SA não contestado;
-6. marca como CanLoader apenas resposta correlacionada com versão 2, target
-   code `0xF1`, SA anunciado e flags J1939/Address Claim/TP RX.
+6. marca como CanLoader apenas resposta correlacionada com o discriminador
+   interno de formato `0x02`, target code `0xF1`, SA anunciado e flags
+   J1939/Address Claim/TP RX.
 
 Antes de operação mutável, `BootloaderClient` resolve o `--name` esperado no SA
 e observa claims durante esperas. Mudança/takeover gera erro de identidade.

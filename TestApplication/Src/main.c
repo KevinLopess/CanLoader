@@ -527,6 +527,9 @@ static bool info_value(uint8_t selector, uint32_t *value)
         case BOOT_INFO_SOURCE_ADDRESS:
             *value = local_address();
             return true;
+        case BOOT_INFO_FLASH_ERASE_UNIT_SIZE:
+            *value = BOOT_FLASH_PAGE_SIZE;
+            return true;
         default:
             return false;
     }

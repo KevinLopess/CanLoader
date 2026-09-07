@@ -156,7 +156,7 @@ static void test_torn_record_is_never_selected_or_reused(void)
     assert(boot_device_config_store(&config) == BOOT_FLASH_STATUS_OK);
 
     config.preferred_address = UINT8_C(0x81);
-    fail_write_call = write_calls + 2U; /* Fail the commit halfword. */
+    fail_write_call = write_calls + 2U; /* Fail the program unit with commit. */
     assert(boot_device_config_store(&config) == BOOT_FLASH_STATUS_PROGRAM);
     assert(boot_device_config_read(&loaded));
     assert(loaded.generation == 1U);

@@ -4,7 +4,13 @@ from enum import IntEnum
 
 
 PROTOCOL_VERSION = 2
-TARGET_CODE = 0xF1
+TARGET_CODE_STM32F103C8 = 0xF1
+TARGET_CODE_STM32G0B1RE = 0xB1
+SUPPORTED_TARGET_CODES = frozenset(
+    (TARGET_CODE_STM32F103C8, TARGET_CODE_STM32G0B1RE)
+)
+# Kept as an import-compatible alias for users of canloader 0.2.x.
+TARGET_CODE = TARGET_CODE_STM32F103C8
 
 # J1939 addresses.
 NULL_ADDRESS = 0xFE
@@ -38,6 +44,8 @@ TP_DATA_BYTES_PER_PACKET = 7
 MAX_TP_PAYLOAD = MAX_TP_PACKETS * TP_DATA_BYTES_PER_PACKET
 MAX_DM16_DATA = MAX_TP_PAYLOAD - 1
 UPDATE_BLOCK_SIZE = 100
+# CanLoader targets now advertise their erase unit through INFO. This is only
+# the compatibility fallback for protocol-v2 firmware built before selector 11.
 FLASH_ERASE_BLOCK_SIZE = 1024
 MIN_IMAGE_SIZE = 8
 
@@ -92,6 +100,7 @@ class InfoSelector(IntEnum):
     NAME_LOW = 8
     NAME_HIGH = 9
     SOURCE_ADDRESS = 10
+    FLASH_ERASE_UNIT_SIZE = 11
 
 
 class Dm14Command(IntEnum):

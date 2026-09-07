@@ -10,12 +10,18 @@
 
 #define DEVICE_CONFIG_SLOT_COUNT \
     (BOOT_DEVICE_CONFIG_PAGE_SIZE / BOOT_DEVICE_CONFIG_RECORD_SIZE)
+#define DEVICE_CONFIG_COMMIT_PROGRAM_OFFSET \
+    (BOOT_DEVICE_CONFIG_COMMIT_OFFSET - \
+     (BOOT_DEVICE_CONFIG_COMMIT_OFFSET % BOOT_FLASH_PROGRAM_UNIT))
 #define J1939_IDENTITY_MASK UINT32_C(0x001FFFFF)
 
 _Static_assert((BOOT_DEVICE_CONFIG_PAGE_SIZE % BOOT_DEVICE_CONFIG_RECORD_SIZE) == 0U,
                "Device configuration records must fill the Flash page");
-_Static_assert((BOOT_DEVICE_CONFIG_COMMIT_OFFSET % BOOT_FLASH_PROGRAM_UNIT) == 0U,
-               "Device configuration commit marker must be program-unit aligned");
+_Static_assert((BOOT_DEVICE_CONFIG_RECORD_SIZE % BOOT_FLASH_PROGRAM_UNIT) == 0U,
+               "Device configuration record must be program-unit aligned");
+_Static_assert((DEVICE_CONFIG_COMMIT_PROGRAM_OFFSET + BOOT_FLASH_PROGRAM_UNIT) <=
+                   BOOT_DEVICE_CONFIG_RECORD_SIZE,
+               "Device configuration commit unit must fit in its record");
 
 static bool address_valid(uint8_t address)
 {
@@ -224,7 +230,6 @@ boot_flash_status_t boot_device_config_store(const boot_device_config_t *config)
     boot_device_config_t latest;
     boot_device_config_t verified;
     uint8_t raw[BOOT_DEVICE_CONFIG_RECORD_SIZE];
-    uint8_t commit[BOOT_FLASH_PROGRAM_UNIT];
     bool have_latest;
     uint32_t slot;
     uint32_t generation;
@@ -262,18 +267,19 @@ boot_flash_status_t boot_device_config_store(const boot_device_config_t *config)
     status = boot_flash_write(BOOT_FLASH_REGION_DEVICE_CONFIG,
                               slot * BOOT_DEVICE_CONFIG_RECORD_SIZE,
                               raw,
-                              BOOT_DEVICE_CONFIG_COMMIT_OFFSET);
+                              DEVICE_CONFIG_COMMIT_PROGRAM_OFFSET);
     if (status != BOOT_FLASH_STATUS_OK)
     {
         return status;
     }
 
-    boot_protocol_write_u16_le(commit, BOOT_DEVICE_CONFIG_COMMIT_VALUE);
+    boot_protocol_write_u16_le(&raw[BOOT_DEVICE_CONFIG_COMMIT_OFFSET],
+                               BOOT_DEVICE_CONFIG_COMMIT_VALUE);
     status = boot_flash_write(BOOT_FLASH_REGION_DEVICE_CONFIG,
                               slot * BOOT_DEVICE_CONFIG_RECORD_SIZE +
-                                  BOOT_DEVICE_CONFIG_COMMIT_OFFSET,
-                              commit,
-                              sizeof(commit));
+                                  DEVICE_CONFIG_COMMIT_PROGRAM_OFFSET,
+                              &raw[DEVICE_CONFIG_COMMIT_PROGRAM_OFFSET],
+                              BOOT_FLASH_PROGRAM_UNIT);
     if (status != BOOT_FLASH_STATUS_OK)
     {
         return status;

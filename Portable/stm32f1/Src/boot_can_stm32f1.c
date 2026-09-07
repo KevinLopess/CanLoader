@@ -12,6 +12,7 @@ extern CAN_HandleTypeDef hcan;
 #define BXCAN_IDE_BIT        UINT32_C(0x04)
 #define BXCAN_RTR_BIT        UINT32_C(0x02)
 #define J1939_DA_ID_MASK     (UINT32_C(0xFF) << 8U)
+#define J1939_PGN_ID_MASK    (UINT32_C(0x3FFFF) << 8U)
 
 static void split_filter_word(uint32_t value,
                               uint32_t *high,
@@ -42,6 +43,26 @@ static bool configure_destination_filter(uint32_t bank, uint8_t address)
     return HAL_CAN_ConfigFilter(&hcan, &filter) == HAL_OK;
 }
 
+static bool configure_pgn_filter(uint32_t bank, uint32_t pgn)
+{
+    CAN_FilterTypeDef filter = {0};
+    const uint32_t value = (pgn << 8U) << BXCAN_EXTENDED_SHIFT;
+    const uint32_t mask =
+        (J1939_PGN_ID_MASK << BXCAN_EXTENDED_SHIFT) |
+        BXCAN_IDE_BIT |
+        BXCAN_RTR_BIT;
+
+    filter.FilterBank = bank;
+    filter.FilterMode = CAN_FILTERMODE_IDMASK;
+    filter.FilterScale = CAN_FILTERSCALE_32BIT;
+    split_filter_word(value, &filter.FilterIdHigh, &filter.FilterIdLow);
+    split_filter_word(mask, &filter.FilterMaskIdHigh, &filter.FilterMaskIdLow);
+    filter.FilterFIFOAssignment = CAN_RX_FIFO0;
+    filter.FilterActivation = ENABLE;
+    filter.SlaveStartFilterBank = 14U;
+    return HAL_CAN_ConfigFilter(&hcan, &filter) == HAL_OK;
+}
+
 bool boot_can_configure_address(uint8_t local_address)
 {
     if (local_address > BOOT_J1939_NULL_ADDRESS)
@@ -50,7 +71,8 @@ bool boot_can_configure_address(uint8_t local_address)
     }
 
     return configure_destination_filter(0U, local_address) &&
-           configure_destination_filter(1U, BOOT_J1939_GLOBAL_ADDRESS);
+           configure_destination_filter(1U, BOOT_J1939_GLOBAL_ADDRESS) &&
+           configure_pgn_filter(2U, BOOT_J1939_PGN_COMMANDED_ADDRESS);
 }
 
 bool boot_can_init(uint8_t local_address)

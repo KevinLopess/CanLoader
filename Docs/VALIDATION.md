@@ -1,15 +1,20 @@
-# Plano de validação integrada do CanLoader v2
+# Plano de validação integrada do CanLoader
 
-> **Validação em hardware ainda não foi registrada.** Este documento define o
-> procedimento e os critérios; não é um certificado nem um relatório de
-> aprovação. Preencha a tabela de evidências durante o ensaio.
+> **A validação em hardware foi iniciada, mas permanece parcial.** A sessão de
+> 25 de agosto de 2026 está registrada em `Validation/evidence/`. Este documento
+> também define os ensaios restantes e não constitui certificado de aprovação
+> do sistema completo.
+
+Esta campanha e suas evidências físicas atuais usam STM32F103C8Tx. O port
+NUCLEO-G0B1RE possui uma matriz adicional em [STM32G0B1RE.md](STM32G0B1RE.md) e
+não deve herdar resultados físicos do F103.
 
 ## 1. Objetivo
 
 A sessão comprova, na ordem:
 
 - build reprodutível e testes automatizados;
-- mapa de memória v2;
+- mapa de memória do target;
 - CAN de 29 bits e Address Claim;
 - descoberta e seleção por NAME;
 - update DM14/DM15/DM16 por TP;
@@ -62,7 +67,24 @@ Antes de começar, registre:
 Arquive também log `--verbose`, captura do barramento, saída de build, `.map`,
 CRC dos binários e fotografias/esquema da bancada.
 
+O diretório `Validation/` contém um modelo de sessão, um coletor do baseline de
+software e um registrador de comandos. Cada execução deve receber uma pasta
+própria em `Validation/evidence/`, sem reutilizar arquivos de outra revisão ou
+placa. Os estados aceitos são PENDENTE, PARCIAL, APROVADO, REPROVADO e
+BLOQUEADO; somente APROVADO pressupõe que todos os critérios foram atendidos e
+que a evidência indicada está arquivada.
+
 ## 4. Quality gate sem hardware
+
+O baseline pode ser executado e arquivado em uma única etapa:
+
+```sh
+./Validation/run_software_baseline.sh \
+  Validation/evidence/AAAA-MM-DD-software-baseline
+```
+
+Os comandos seguintes detalham o conteúdo executado pelo coletor e continuam
+úteis para diagnóstico individual.
 
 Crie um ambiente limpo com Python 3.10 ou superior. Se a criação for
 interrompida, remova apenas a `.venv` incompleta e repita o primeiro comando:
@@ -82,9 +104,12 @@ make clean
 make bootloader
 make test-application
 make test
+make TARGET=stm32g0b1re all
 ```
 
-Confirme que todas as seis suítes C foram executadas, não apenas compiladas:
+Na árvore atual, `make test-c` executa nove binários: os seis originais e três
+variantes que recompilam configuração, FSM e metadata com os parâmetros G0.
+Confirme que todos foram executados, não apenas compilados:
 
 ```sh
 Tests/c/build/test_protocol
@@ -93,6 +118,9 @@ Tests/c/build/test_j1939_tp
 Tests/c/build/test_device_config_v2
 Tests/c/build/test_bootloader
 Tests/c/build/test_metadata_image
+Tests/c/build/test_device_config_g0
+Tests/c/build/test_bootloader_g0
+Tests/c/build/test_metadata_image_g0
 ```
 
 E rode explicitamente a suíte Python:
@@ -593,25 +621,63 @@ Meça pelo menos:
 Registre bitrate, tamanho da imagem e backend. Não generalize resultado de
 SLCAN/macOS para SocketCAN/Linux sem medir ambos.
 
-## 21. Resultado consolidado
+O tempo definido para a monografia começa no envio de `START_UPDATE` e termina
+na resposta bem-sucedida de `VERIFY`. A duração total do processo da CLI inclui
+Address Claim, descoberta e IDENTIFY, portanto não representa essa métrica. O
+log `--verbose` atual também não possui timestamp por quadro. Use uma captura
+CAN independente e temporizada para obter os dois instantes. No SLCAN, um
+segundo adaptador ou analisador deve atuar como tap, pois dois processos não
+podem consumir simultaneamente a mesma porta serial.
+
+## 21. TESTE O — dados residuais após imagem menor
+
+Este teste caracteriza a limitação de apagamento proporcional ao tamanho
+declarado da imagem.
+
+1. atualize uma imagem válida grande e arquive tamanho, CRC e hash;
+2. leia por SWD os 64 KiB de Flash e preserve o dump integral;
+3. atualize uma imagem válida menor;
+4. faça nova leitura integral por SWD;
+5. compare a região posterior à última página apagada pela imagem menor;
+6. confirme por INFO e VERIFY que tamanho e CRC se referem somente à imagem
+   nova.
+
+Critérios:
+
+- bootloader e configuração permanecem inalterados;
+- a imagem menor é válida somente dentro de seu tamanho lógico;
+- bytes antigos eventualmente preservados depois das páginas apagadas são
+  registrados, mas não entram no CRC nem ampliam a faixa permitida ao Reset
+  Handler;
+- a discussão não apresenta a permanência desses bytes como vazamento de uma
+  imagem aceita, nem omite a limitação de remanência física.
+
+## 22. Resultado consolidado
+
+O estado `PARCIAL` identifica procedimentos iniciados cujos critérios ainda não
+foram completados. `BLOQUEADO` é reservado à parte que depende de equipamento,
+instrumentação ou condição externa indisponível. A sessão física citada abaixo
+não substitui os ensaios restantes. Nas linhas A a N, os caminhos abreviados partem de
+`Validation/evidence/2026-08-25-hardware-preflight/`.
 
 | Teste | Resultado | Evidência | Observações |
 |---|---|---|---|
-| quality gate/build | pendente | | |
-| A — claim/framing | pendente | | |
-| B — INFO/identidade | pendente | | |
-| C — update DM/TP | pendente | | |
-| D — CRC | pendente | | |
-| E — handoff/autoboot | pendente | | |
-| F — aplicação/reboot | pendente | | |
-| G — Commanded Address | pendente | | |
-| H — interrupção | pendente | | |
-| I — recuperação | pendente | | |
-| J — erros | pendente | | |
-| K — multinó dirigido | pendente | | |
-| L — Cannot Claim | pendente | | |
-| M — journal | pendente | | |
-| N — desempenho | pendente | | |
+| quality gate/build | APROVADO | `Validation/evidence/2026-08-25-software-baseline/` | Build, seis executáveis C e 77 casos Python aprovados |
+| A — claim/framing | PARCIAL | `commands/20260825T073220-0300-can-scan.log` | Dois claims estendidos observados pela CLI; faltam captura independente e estado inicial sem aplicação |
+| B — INFO/identidade | PARCIAL | `commands/20260825T073230-0300-info-target-a.log`; `commands/20260825T073234-0300-info-target-b.log`; `commands/20260825T073509-0300-wrong-name-negative.log` | INFO e trava de NAME exercitados; sequência completa após erase/reset físico não foi executada |
+| C — update DM/TP | PARCIAL | `commands/20260825T073342-0300-target-a-update-normal.log`; `analysis/target-a-update-normal.json` | Uma atualização de 7320 bytes concluiu; faltam leitura SWD e observação do LED |
+| D — CRC | APROVADO | `commands/20260825T073459-0300-firmware-identification.log`; `commands/20260825T073342-0300-target-a-update-normal.log`; `commands/20260825T073401-0300-target-a-info-after-update.log`; `commands/20260825T073314-0300-target-a-verify-in-bootloader.log` | No bootloader residente, cuja revisão não foi confirmada, arquivo, update, VERIFY e INFO coincidiram em 7320 bytes e `0x7BB303AE` |
+| E — handoff/autoboot | PARCIAL | `commands/20260825T073316-0300-target-a-run-application.log`; `commands/20260825T073324-0300-can-scan-after-roundtrip.log` | Retorno ao modo aplicação observado; LED, reset físico e registradores não foram registrados |
+| F — aplicação/reboot | PARCIAL | `commands/20260825T073310-0300-target-a-reboot-to-bootloader.log`; `commands/20260825T073314-0300-target-a-verify-in-bootloader.log` | Reboot remoto e modo bootloader observados; janela completa de 10 s não foi caracterizada |
+| G — Commanded Address | PENDENTE | | Nenhum endereço persistente foi alterado |
+| H — interrupção | PENDENTE | | Nenhum corte de alimentação foi realizado |
+| I — recuperação | PENDENTE | | Houve recuperação após imagem inválida, mas não após a interrupção definida no teste H |
+| J — erros | PARCIAL | `commands/20260825T073509-0300-wrong-name-negative.log`; `commands/20260825T073648-0300-target-a-update-invalid-msp.log`; `commands/20260825T073702-0300-target-a-run-invalid-negative.log` | MSP nulo e NAME divergente exercitados; matriz de frames e falhas permanece incompleta |
+| K — multinó dirigido | PARCIAL | `commands/20260825T073220-0300-can-scan.log`; `analysis/target-a-update-normal.json`; `commands/20260825T073404-0300-target-b-control-after-update.log` | Dois nós presentes e tráfego dirigido ao alvo A; não houve conflito inicial nem dump dos dois alvos |
+| L — Cannot Claim | PENDENTE | | |
+| M — journal | PENDENTE | | |
+| N — desempenho | BLOQUEADO | `analysis/target-a-update-normal.json` | Há contagem de quadros, mas não havia captura externa com timestamps por quadro |
+| O — dados residuais | BLOQUEADO | | A conexão SWD necessária à leitura da região estava indisponível |
 
 Somente marque “aprovado” com log/captura correspondente. Uma conclusão válida
 deve separar: testes automatizados, build embarcado, validação elétrica,

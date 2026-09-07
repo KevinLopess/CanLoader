@@ -2,12 +2,14 @@
 
 ## 1. Estado normativo
 
-CanLoader v2 não é uma implementação certificada de SAE J1939 e não passou por
+CanLoader não é uma implementação certificada de SAE J1939 e não passou por
 um programa formal de conformance/interoperability.
 
-A implementação é v2-only: não negocia outra versão, não aceita frames CAN
-standard como comandos e não oferece modo de compatibilidade selecionável em
-runtime. Host, bootloader e aplicação precisam usar o mesmo contrato v2.
+A implementação aceita somente o formato atual: não negocia outro formato, não
+aceita frames CAN standard como comandos e não oferece compatibilidade
+selecionável em runtime. Host, bootloader e aplicação precisam usar o mesmo
+contrato. O valor interno de versão é 2, sem representar uma segunda versão
+lançada do CanLoader.
 
 O projeto usa:
 
@@ -37,8 +39,8 @@ O target aceita somente:
 - DM15 PROCEED, BUSY, COMPLETED e FAILED.
 
 O campo de comprimento DM14/DM15 fica limitado a 1784 bytes; no fluxo de
-update, a implementação restringe ainda mais cada WRITE a 100 bytes e o ERASE
-ao número exato de páginas necessário para a imagem declarada.
+update, a implementação restringe cada WRITE ao bloco anunciado (100 bytes no
+F103, 96 no G0) e o ERASE ao número exato de unidades necessário para a imagem.
 
 READ, Directed Spatial Addressing, Boot Load DM, EDCP Generation, DM18, seed-key
 e chave longa não são implementados.

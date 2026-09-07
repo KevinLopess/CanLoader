@@ -1,14 +1,16 @@
-# Arquitetura do CanLoader v2
+# Arquitetura do CanLoader
 
-Esta arquitetura implementa somente o protocolo v2. Não existe seleção de
-versão em runtime nem compatibilidade on-wire com o protocolo anterior de IDs
-CAN standard.
+Esta arquitetura implementa somente o protocolo atual. Não existe seleção de
+formato em runtime nem compatibilidade on-wire com o protótipo anterior de IDs
+CAN standard. O valor interno `0x02` distingue os quadros atuais, mas não nomeia
+uma segunda versão lançada do CanLoader.
 
 ## 1. Objetivos arquiteturais
 
 A implementação foi separada para que regras de atualização, protocolo e
-persistência possam ser testadas sem HAL e para que o port do STM32F1 seja
-substituível. Os principais invariantes são:
+persistência possam ser testadas sem HAL. A existência dos ports STM32F1 e
+STM32G0 demonstra essa separação no código, embora cada novo modelo ainda exija
+um port explícito e validação própria. Os principais invariantes são:
 
 - nenhuma entrada CAN escolhe diretamente uma região física de Flash;
 - somente uma sessão de update e uma operação DM/TP ficam ativas;
@@ -20,7 +22,7 @@ substituível. Os principais invariantes são:
 ## 2. Camadas e dependências
 
 ```text
-Core/Src/main.c
+Core/Src/main.c ou Targets/<target>/Core/
         |
         v
 Application/Src/bootloader.c  <---------- Config/boot_config.h
@@ -40,8 +42,9 @@ Protocol/
 Portable/Inc/{boot_can,boot_flash,boot_platform}.h
         |
         v
-Portable/stm32f1/Src/
-  HAL + bxCAN + FPEC + Cortex-M3
+Portable/stm32f1/Src/       Portable/stm32g0/Src/
+  HAL + bxCAN + FPEC          HAL + FDCAN + Flash
+  Cortex-M3                   Cortex-M0+
 
 Tools/canloader/              mesma especificação no host
 Tests/c e Tests/python        dublês e vetores de regressão
@@ -60,12 +63,33 @@ Tests/c e Tests/python        dublês e vetores de regressão
 | `boot_crc32.c` | CRC-32/ISO-HDLC incremental |
 | `Portable/Inc` | contratos independentes de MCU |
 | port STM32F1 | HAL CAN, FPEC, UID, LED, backup registers, reset e assembly de jump |
+| port STM32G0 | HAL FDCAN, Flash dual-bank, UID, LED, backup registers, reset e handoff Cortex-M0+ |
 | host Python | Address Claim do Tool, scanner, TP sender, retry e CLI |
 
 `Application` não conhece tipos da HAL. `Protocol` opera apenas sobre
 `boot_can_frame_t`, buffers e inteiros de largura fixa.
 
-### 2.1 Mapa de memória do STM32F103C8
+### 2.1 Bare-metal e fronteira da HAL
+
+Bare-metal e HAL não são conceitos mutuamente exclusivos. O firmware não usa
+RTOS, scheduler, threads ou alocação dinâmica; a execução continua sendo
+bare-metal. CMSIS fornece o startup, as definições do núcleo Cortex-M e as
+operações necessárias ao handoff. A HAL é uma implementação dos adaptadores de
+hardware dos dois targets atuais.
+
+A HAL não é o mecanismo de portabilidade do núcleo. Essa função pertence aos
+contratos `boot_can.h`, `boot_flash.h` e `boot_platform.h`. Um port futuro pode
+implementar esses contratos com HAL, LL ou registradores, sem alterar
+`Application` e `Protocol`. O comando `make check-portability` verifica essa
+fronteira e rejeita referências a HAL, LL, cabeçalhos de dispositivo STM32 ou
+`main.h` nos diretórios comuns.
+
+O acesso direto a registradores deve ser adotado de forma localizada e apoiado
+por uma comparação reproduzível de tamanho, tempo e comportamento em hardware.
+Isso evita trocar drivers já exercitados por código específico de família sem
+uma necessidade mensurável.
+
+### 2.2 Mapa de memória do STM32F103C8
 
 O target assume 64 KiB de Flash, páginas de 1 KiB e 20 KiB de SRAM:
 
@@ -83,6 +107,22 @@ incorporada ao `.bin`. A aplicação possui linker independente, VTOR em
 `0x08005000` e limite rígido em `0x0800FC00`; a metadata também não pertence ao
 binário da aplicação.
 
+### 2.3 Mapa de memória do STM32G0B1RE
+
+O segundo target usa 512 KiB de Flash, páginas de 2 KiB e 144 KiB de SRAM:
+
+| Região | Início | Fim inclusivo | Tamanho | Uso |
+|---|---:|---:|---:|---|
+| código do bootloader | `0x08000000` | `0x080077FF` | 30 KiB | vetores, lógica, HAL e protocolo |
+| configuração do dispositivo | `0x08007800` | `0x08007FFF` | 2 KiB | journal de NAME/preferred SA |
+| aplicação | `0x08008000` | `0x0807F7FF` | 478 KiB (`0x77800`) | imagem atualizável |
+| metadata | `0x0807F800` | `0x0807FFFF` | 2 KiB | tamanho, CRC e estado da imagem |
+| SRAM | `0x20000000` | `0x20023FFF` | 144 KiB | dados, buffers, heap nulo e stack |
+
+Os endereços são isolados nos headers de `Config/targets/`. A ferramenta host
+lê base, tamanho máximo e unidade de apagamento do próprio dispositivo; ela
+não deriva o mapa a partir do código de produto.
+
 ## 3. Inicialização
 
 O `main` gerado pelo CubeMX executa:
@@ -99,12 +139,14 @@ HAL_Init
 `bootloader_init()`:
 
 1. zera o contexto e acende o LED;
-2. inicializa o port de Flash e confere pelo menos 64 KiB;
+2. inicializa o port de Flash e confere tamanho e mapeamento exigidos pelo
+   target;
 3. carrega o último registro NAME/SA válido ou gera defaults pelo UID96;
 4. inicializa Address Claim e receptor TP;
 5. autoriza BAM exclusivamente para Commanded Address de 9 bytes;
 6. consome, se presente, a assinatura one-shot de entrada no bootloader;
-7. configura filtros bxCAN para o SA preferido e destino global;
+7. configura filtros CAN para o SA preferido, destino global e Commanded
+   Address;
 8. inicia CAN e transmite Address Claimed;
 9. valida metadata, CRC e vetores da aplicação;
 10. entra em `BOOT_WINDOW` se a aplicação for válida, ou `WAIT_HOST` se não.
@@ -225,9 +267,9 @@ boot_can_receive
        +-- DM16 local direto: bloco de 1..7 bytes
 ```
 
-Frames com destino diferente podem atravessar o filtro amplo, mas são
-descartados em software. Standard, RTR e IDs acima de 29 bits não viram frames
-do protocolo.
+Os filtros físicos reduzem o tráfego, mas não substituem a validação de PGN,
+destino e campos feita em software. Frames standard, RTR e IDs acima de 29 bits
+não viram frames do protocolo.
 
 ## 8. Address Claim e mudança de endereço
 
@@ -246,10 +288,10 @@ Toda mudança efetiva do SA, causada por Commanded Address ou por disputa de
 claim, passa por uma transição de TX antes de expor a nova rota. O bootloader:
 
 1. zera `tx_head`/`tx_count`, descartando respostas ainda na fila circular;
-2. chama `boot_can_abort_pending_tx()`, cujo port STM32F1 solicita à HAL o abort
-   simultâneo de `CAN_TX_MAILBOX0`, `CAN_TX_MAILBOX1` e `CAN_TX_MAILBOX2`;
+2. chama `boot_can_abort_pending_tx()`, que cancela os três mailboxes bxCAN ou
+   os três buffers da fila FDCAN, conforme o target;
 3. invalida uma sessão de update ativa, caso a mudança tenha vindo de disputa;
-4. reconfigura os filtros bxCAN para o novo SA e o destino global;
+4. reconfigura os filtros para o novo SA, destino global e Commanded Address;
 5. somente então coleta o Address Claimed pendente do módulo de claim para a
    fila TX.
 
@@ -265,14 +307,14 @@ zera os demais campos funcionais, ativa o bit Arbitrary Address Capable e parte
 do preferred SA `0x80`. Esse NAME é adequado apenas à bancada: produção exige
 Manufacturer Code e identidade administrados corretamente.
 
-A página de configuração contém 32 slots append-only de 32 bytes. Cada registro
-inclui magic, versão de formato 2, tamanho, geração, NAME, endereço e seu
-complemento, flags e CRC. O firmware grava primeiro os 28 bytes cobertos pelo
-registro e programa o commit de 16 bits por último. Na leitura, ignora slots
-parciais ou com CRC inválido e escolhe a geração válida mais recente, inclusive
-com comparação modular após wrap. Quando os 32 slots estão ocupados, a próxima
-mudança apaga a página e reinicia no slot zero; essa compactação de página única
-é uma fronteira de tolerância a queda de energia.
+A página de configuração contém registros append-only de 32 bytes: 32 slots no
+F103 e 64 no G0. Cada registro inclui magic, versão de formato 2, tamanho,
+geração, NAME, endereço e seu complemento, flags e CRC. A unidade física que
+contém o commit é programada por último: 2 bytes no F103 e os 8 bytes finais no
+G0. Na leitura, slots parciais ou com CRC inválido são ignorados. Quando a
+página fica cheia, a próxima mudança apaga a página e reinicia no slot zero;
+essa compactação de página única é uma fronteira de tolerância a queda de
+energia.
 
 ## 9. Receptor TP
 
@@ -289,28 +331,28 @@ O target possui um único receptor TP:
 - RTS inválido usa reason 2; timeout usa reason 3;
 - frames TP alheios à sessão podem ser ignorados.
 
-O buffer de DM16 tem 101 bytes na configuração de update atual: marcador `FF`
-mais bloco de 100. A biblioteca genérica conhece o limite TP 1785, mas o
-bootloader não reserva 1785 bytes em RAM. O campo DM14/DM15 fica limitado a
-1784 bytes porque o primeiro byte do payload DM16 multipacket é o marcador de
-comprimento estendido.
+O buffer de DM16 é dimensionado como marcador `FF` mais o bloco do target: 101
+bytes no F103 e 97 no G0. A biblioteca genérica conhece o limite TP 1785, mas o
+bootloader não reserva esse espaço em RAM. O perfil limita WRITE a no máximo
+100 bytes e o tamanho efetivo é anunciado por `START_UPDATE`.
 
 ## 10. Transação de Flash
 
 ```text
 START_UPDATE(size)
   -> SET_IMAGE_CRC(crc)
-  -> DM14 ERASE(APP_BASE, ceil(size/1024))
+  -> INFO(FLASH_ERASE_UNIT_SIZE)
+  -> DM14 ERASE(APP_BASE, ceil(size/erase_unit))
        -> DM15 PROCEED enfileirado e transmitido
        -> metadata_begin: erase metadata, grava UPDATING, relê
        -> erase das páginas da aplicação, readback
        -> DM15 COMPLETED
        -> DM14 close com mesmo pointer/length
-  -> para offset = 0; offset < size; offset += 100
+  -> para offset = 0; offset < size; offset += bloco_anunciado
        -> DM14 WRITE(APP_BASE+offset, expected_length)
        -> DM15 PROCEED
        -> DM16 direto ou TP
-       -> programa halfwords e verifica
+       -> programa unidades físicas e verifica
        -> DM15 COMPLETED
        -> DM14 close com mesmo pointer/length
   -> FINALIZE(expected_crc)
@@ -324,10 +366,10 @@ EOM_ACK significa apenas que o receptor TP recebeu todos os bytes. A confirmaç�
 de Flash é DM15. O close DM14 mantém pointer/length da operação; não há timer de
 close separado, e a sessão inteira expira após 5 s sem atividade.
 
-Como a FPEC programa halfwords, um bloco final de tamanho ímpar recebe `0xFF`
-somente no segundo byte físico do último halfword. `bytes_committed`, tamanho da
-metadata e CRC continuam usando o comprimento lógico informado pelo host; o
-padding não passa a fazer parte da imagem.
+Um bloco final que não completa a unidade física recebe padding `0xFF`: até um
+byte no F103 e até sete no G0. `bytes_committed`, tamanho da metadata e CRC
+continuam usando o comprimento lógico informado pelo host; o padding não passa
+a fazer parte da imagem.
 
 ## 11. Idempotência e falhas
 
@@ -353,15 +395,17 @@ Uma imagem somente é executável se:
 
 1. metadata tem magic, versões e CRC de cabeçalho válidos;
 2. estado persistente é `VALID` sem marker `INVALID`;
-3. `image_size` está em `8..44032`;
+3. `image_size` está entre 8 e o máximo do target (44032 no F103 ou 489472 no
+   G0B1RE);
 4. CRC-32/ISO-HDLC da Flash coincide;
 5. MSP está na SRAM e alinhado em 8 bytes;
 6. Reset Handler tem Thumb bit e aponta dentro do tamanho declarado.
 
 Antes do jump, o port desinicializa CAN/HAL/RCC, desabilita SysTick, desabilita
 e limpa IRQs NVIC, limpa PendSV/SysTick pendentes e executa DSB/ISB. A rotina
-assembly escreve VTOR, zera `CONTROL`, `BASEPRI`, `FAULTMASK` e `PRIMASK`,
-carrega MSP e salta.
+assembly escreve VTOR, zera os registradores de máscara disponíveis no núcleo,
+carrega MSP e salta. No Cortex-M3 isso inclui `BASEPRI` e `FAULTMASK`; o
+Cortex-M0+ não possui esses dois registradores.
 
 Para RUN, o ACK é enfileirado primeiro. O caminho normal aguarda pelo menos
 50 ms, fila vazia e mailboxes livres; 250 ms é o limite absoluto, portanto o
@@ -369,9 +413,10 @@ jump ainda acontece se o ACK não puder ser observado.
 
 ## 13. Aplicação de referência
 
-A aplicação possui linker e `SystemInit` próprios, reutiliza o startup assembly
-STM32F103 do projeto, não usa HAL e é linkada em `0x08005000`. Ela reutiliza os
-módulos de NAME/config, J1939, Address Claim, TP e protocolo. Em runtime:
+Cada target possui linker, startup e aplicação de referência coerentes com seu
+mapa. A variante F103 é freestanding e linkada em `0x08005000`; a variante G0
+usa a HAL do port e é linkada em `0x08008000`. As duas reutilizam os módulos de
+NAME/config, J1939, Address Claim, TP e protocolo. Em runtime:
 
 - reivindica o mesmo NAME/SA;
 - responde a Request/Address Claimed;
@@ -382,13 +427,12 @@ módulos de NAME/config, J1939, Address Claim, TP e protocolo. Em runtime:
 - espera 50 ms e confirmação TX quando possível, com reset forçado em 250 ms;
 - pisca duas vezes para tornar o handoff visível.
 
-Ela usa HSI a 8 MHz, SysTick de 1 ms e configura diretamente o bxCAN em
-PA11/PA12 para 500 kbit/s. Seu filtro aceita qualquer data frame extended; a
-pilha descarta por PGN e destino em software. Ela não implementa update da
-partição de aplicação em execução e só escreve a página de configuração ao
-processar Commanded Address.
+A variante F103 usa HSI a 8 MHz e bxCAN em PA11/PA12. A variante G0 usa clock
+de 64 MHz e FDCAN1 em PC4/PC5. Ambas operam em CAN clássico a 500 kbit/s. Elas
+não implementam update da própria partição em execução e só persistem a página
+de configuração ao processar Commanded Address.
 
-Como a aplicação de referência transmite exclusivamente pelo mailbox 0, sua
+Na variante F103, como a aplicação de referência transmite exclusivamente pelo mailbox 0, sua
 transição de endereço zera a fila TX e escreve `CAN_TSR_ABRQ0` se esse mailbox
 estiver ocupado. O novo Address Claimed é enfileirado em seguida, mas só pode
 entrar no mailbox quando `CAN_TSR_TME0` indicar que o cancelamento terminou.
@@ -414,7 +458,9 @@ troca de rota ou takeover.
 
 ## 15. Portabilidade
 
-Para outro MCU, devem ser substituídos, no mínimo:
+O segundo port confirma que `Application`, `Protocol` e a maior parte dos
+testes permanecem comuns. Isso não significa compatibilidade automática com
+todo STM32. Para outro MCU, devem ser substituídos, no mínimo:
 
 1. startup/CMSIS/HAL e flags de arquitetura;
 2. mapa, linker scripts e tamanho real de Flash/SRAM;
@@ -422,21 +468,23 @@ Para outro MCU, devem ser substituídos, no mínimo:
 4. CAN/FDCAN mantendo CAN clássico de 29 bits se o wire v2 for preservado;
 5. UID/default NAME e mecanismo de persistência;
 6. tick, LED, backup request, reset e handoff;
-7. filtros para destino local/global;
+7. filtros para destino local/global e Commanded Address;
 8. aplicação relocada e testes de boundary/falha de energia.
 
-CAN FD, ETP, dual-bank e secure boot não são meras trocas de port: alteram
-requisitos e possivelmente o contrato on-wire.
+CAN FD, ETP e secure boot não são meras trocas de port: alteram requisitos e
+possivelmente o contrato on-wire. O G0 usa Flash dual-bank internamente, mas o
+protocolo permanece *single-slot* e não oferece rollback.
 
 ## 16. Integração CubeMX
 
-Ao regenerar o projeto, verificar:
+Ao regenerar um target, verificar:
 
 - chamadas a `bootloader_init()`/`bootloader_task()` nas seções de usuário;
 - source folders e include paths de `Application`, `Protocol`, `Portable` e
   `Config`;
-- linker `STM32F103C8TX_FLASH.ld` com 19 KiB + config;
-- PA11/PA12, clock bxCAN e 500 kbit/s;
-- filtros para data frames extended dirigidos ao SA local e ao destino global;
+- linker e header de target com partições iguais;
+- pinos, clock do CAN/FDCAN e 500 kbit/s;
+- filtros para data frames extended dirigidos ao SA local, ao destino global e
+  ao PGN Commanded Address;
 - opção de garbage collection e relatório `.map`;
-- vector table da aplicação em `0x08005000`.
+- vector table da aplicação no `BOOT_APPLICATION_ADDRESS` do target.

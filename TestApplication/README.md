@@ -1,9 +1,10 @@
-# Aplicação de teste do CanLoader v2
+# Aplicação de teste do CanLoader
 
-Esta aplicação mínima para STM32F103C8 valida o handoff do bootloader e mantém
-o dispositivo gerenciável na rede J1939 depois do salto. Ela usa exclusivamente
-o protocolo CanLoader v2, não executa atualização da própria partição e não
-substitui uma aplicação de produto.
+O diretório contém aplicações mínimas para STM32F103C8Tx e NUCLEO-G0B1RE. Elas
+validam o handoff do bootloader e mantêm o dispositivo gerenciável na rede
+J1939 depois do salto. Usam exclusivamente o protocolo atual do CanLoader, não
+executam atualização da própria partição e não substituem uma aplicação de
+produto.
 
 ## Objetivos
 
@@ -17,7 +18,9 @@ A imagem foi construída para comprovar em hardware que:
 - Commanded Address altera e persiste o preferred SA sem trocar o NAME;
 - um update iniciado enquanto a aplicação roda retorna primeiro ao bootloader.
 
-## Mapa de memória
+## Variante STM32F103C8Tx
+
+### Mapa de memória
 
 | Item | Valor |
 |---|---:|
@@ -33,7 +36,7 @@ incluída no `.bin`; ela é criada pelo bootloader durante o update. O
 desliga HSE/PLL para tornar o início independente do estado deixado pelo
 bootloader.
 
-## Implementação em runtime
+### Implementação em runtime
 
 A aplicação é freestanding, sem HAL, heap ou alocação dinâmica. Ela reutiliza
 diretamente os módulos compartilhados de:
@@ -79,8 +82,9 @@ Enquanto está executando, a aplicação:
 - aceita `ENTER_BOOTLOADER` dirigido ao seu SA;
 - responde com NACK `INVALID_STATE` aos demais comandos mutáveis.
 
-O INFO expõe capabilities, base/tamanho máximo da aplicação, tamanho/CRC da
-metadata válida, UID96, NAME e SA atual. IDENTIFY/INFO e todas as respostas usam
+O INFO expõe capabilities, base/tamanho máximo da aplicação, unidade de
+apagamento, tamanho/CRC da metadata válida, UID96, NAME e SA atual.
+IDENTIFY/INFO e todas as respostas usam
 Proprietary A `0xEF00` com identificadores CAN extended de 29 bits.
 
 ### Retorno remoto ao bootloader
@@ -121,7 +125,7 @@ A implementação local de Flash permite escrita e erase somente nessa página d
 configuração. Ela não oferece à aplicação um caminho para modificar código,
 metadata ou a partição do bootloader.
 
-## Indicação pelo LED
+### Indicação pelo LED
 
 O LED ativo-baixo em PC13 repete continuamente:
 
@@ -140,6 +144,12 @@ Com GNU Arm Embedded Toolchain no `PATH`, a partir da raiz do repositório:
 
 ```sh
 make test-application
+```
+
+Para a NUCLEO-G0B1RE:
+
+```sh
+make TARGET=stm32g0b1re test-application
 ```
 
 Ou diretamente neste diretório:
@@ -178,6 +188,35 @@ Substitua endereço e NAME pelos valores descobertos com `canloader ls`. No
 macOS, use o backend SLCAN e a porta `/dev/cu.*` conforme
 [o plano de validação](../Docs/VALIDATION.md).
 
+## Variante NUCLEO-G0B1RE
+
+A variante G0 é linkada em `0x08008000`, usa até 489472 bytes da partição de
+aplicação e posiciona VTOR nesse endereço. Ela inicializa HSI/PLL em 64 MHz,
+FDCAN1 em modo CAN clássico a 500 kbit/s e o LED LD4 em PA5. PC4 é RX e PC5 é
+TX, ambos em AF3.
+
+Os artefatos ficam em:
+
+```text
+build/stm32g0b1re/canloader_test_app.elf
+build/stm32g0b1re/canloader_test_app.bin
+build/stm32g0b1re/canloader_test_app.hex
+build/stm32g0b1re/canloader_test_app.map
+```
+
+O update correspondente é:
+
+```sh
+canloader update \
+  TestApplication/build/stm32g0b1re/canloader_test_app.bin \
+  --interface socketcan --channel can0 \
+  --address 0x80 --name 0x8000000000123456 --run --verbose
+```
+
+O port G0 compila e seus contratos comuns são testados no host, mas a execução
+na NUCLEO-G0B1RE ainda precisa ser comprovada em bancada. A montagem e os testes
+específicos estão em [STM32G0B1RE.md](../Docs/STM32G0B1RE.md).
+
 ## Critérios de aprovação
 
 Após um update completo:
@@ -185,7 +224,8 @@ Após um update completo:
 - `canloader verify` retorna o mesmo CRC do `.bin`;
 - `canloader run` inicia o padrão de duas piscadas;
 - `canloader ls` mostra o mesmo NAME e o modo `application`;
-- `canloader info` informa base `0x08005000`, máximo 44032 bytes e
+- `canloader info` informa a base, o máximo e a unidade de apagamento do target,
+  além de
   `APPLICATION_RUNNING`;
 - `canloader reboot` observa o novo claim do bootloader dentro da janela de
   10 s;
@@ -200,7 +240,7 @@ detalhados em [Docs/VALIDATION.md](../Docs/VALIDATION.md).
 - não autentica comandos, firmware ou Commanded Address;
 - não usa watchdog e não diagnostica detalhadamente bus-off;
 - aceita somente CAN clássico a 500 kbit/s;
-- usa um filtro RX amplo e uma fila TX estática de oito frames;
+- usa uma fila TX estática de oito frames;
 - se a inicialização CAN falhar, o LED continua piscando, mas os serviços de
   rede ficam indisponíveis;
 - não transforma um ensaio sem hardware em evidência de validação física.

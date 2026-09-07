@@ -630,6 +630,17 @@ static void test_claim_identify_and_info(void)
                                    BOOT_RESPONSE_ACK,
                                    BOOT_COMMAND_INFO,
                                    8U) == BOOT_APPLICATION_ADDRESS);
+
+    frame = make_control(BOOT_COMMAND_INFO,
+                         HOST_ADDRESS,
+                         9U,
+                         BOOT_INFO_FLASH_ERASE_UNIT_SIZE,
+                         0U);
+    first = exchange(&frame);
+    assert(assert_control_response(first,
+                                   BOOT_RESPONSE_ACK,
+                                   BOOT_COMMAND_INFO,
+                                   9U) == BOOT_FLASH_PAGE_SIZE);
 }
 
 static void test_update_owner_and_complete_tp_block(void)
@@ -980,6 +991,8 @@ static void test_slow_tp_renews_update_activity(void)
     size_t first;
     uint16_t index;
     uint8_t sequence;
+    const uint8_t packet_count =
+        (uint8_t)((sizeof(wire) + 6U) / 7U);
 
     for (index = 0U; index < sizeof(firmware); ++index)
     {
@@ -1009,14 +1022,14 @@ static void test_slow_tp_renews_update_activity(void)
 
     frame = make_tp_cm(BOOT_J1939_TP_CONTROL_RTS,
                        sizeof(wire),
-                       15U,
-                       15U);
+                       packet_count,
+                       packet_count);
     first = exchange(&frame);
     assert(boot_j1939_decode_frame(&fake.tx[first], &header));
     assert(header.pgn == BOOT_J1939_PGN_TP_CM);
     assert(fake.tx[first].data[0] == BOOT_J1939_TP_CONTROL_CTS);
 
-    for (sequence = 1U; sequence <= 15U; ++sequence)
+    for (sequence = 1U; sequence <= packet_count; ++sequence)
     {
         const uint16_t offset = (uint16_t)(sequence - 1U) * 7U;
         const uint16_t remaining = (uint16_t)sizeof(wire) - offset;
@@ -1032,7 +1045,7 @@ static void test_slow_tp_renews_update_activity(void)
             assert(fake.tx_count == first + 1U);
             assert(fake.tx[first].data[0] == BOOT_J1939_TP_CONTROL_CTS);
         }
-        else if (sequence == 15U)
+        else if (sequence == packet_count)
         {
             assert(fake.tx_count == first + 2U);
             assert(fake.tx[first].data[0] == BOOT_J1939_TP_CONTROL_EOM_ACK);

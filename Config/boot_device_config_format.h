@@ -4,8 +4,9 @@
 #include <stdint.h>
 
 /*
- * Append-only journal. The commit halfword is programmed last, so a reset
- * during an update cannot make a partial record valid.
+ * Append-only journal. The Flash program unit containing the commit halfword
+ * is programmed last, so a reset during an update cannot make a partial
+ * record valid. On 64-bit Flash targets that final unit also contains the CRC.
  */
 #define BOOT_DEVICE_CONFIG_MAGIC                 UINT32_C(0x46434C43) /* "CLCF" */
 #define BOOT_DEVICE_CONFIG_FORMAT_VERSION        UINT16_C(2)

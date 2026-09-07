@@ -1,4 +1,4 @@
-"""High-level CanLoader v2 client and J1939 network scanner."""
+"""High-level CanLoader client and J1939 network scanner."""
 
 from collections import deque
 from collections.abc import Callable
@@ -27,7 +27,7 @@ from .constants import (
     PGN_DM16,
     PROTOCOL_VERSION,
     REQUIRED_PROFILE_CAPABILITIES,
-    TARGET_CODE,
+    SUPPORTED_TARGET_CODES,
     UPDATE_BLOCK_SIZE,
     Command,
     Dm14Command,
@@ -90,10 +90,13 @@ def _validate_identify_capabilities(
             f"IDENTIFY advertised protocol {advertised_version}; "
             f"expected {PROTOCOL_VERSION}"
         )
-    if advertised_target != TARGET_CODE:
+    if advertised_target not in SUPPORTED_TARGET_CODES:
+        supported = ", ".join(
+            f"0x{target:02X}" for target in sorted(SUPPORTED_TARGET_CODES)
+        )
         raise ProtocolError(
             f"IDENTIFY advertised target code 0x{advertised_target:02X}; "
-            f"expected 0x{TARGET_CODE:02X}"
+            f"supported codes are {supported}"
         )
     missing = REQUIRED_PROFILE_CAPABILITIES & ~capabilities
     if missing:
@@ -110,6 +113,7 @@ class DeviceInfo:
     capabilities: int
     app_base: int
     app_max_size: int
+    flash_erase_unit_size: int
     stored_size: int
     stored_crc: int
     uid_words: tuple[int, int, int]
@@ -625,6 +629,7 @@ class BootloaderClient(_RawEndpoint):
         )
         app_base = self.info(InfoSelector.APP_BASE)
         app_max_size = self.info(InfoSelector.APP_MAX_SIZE)
+        flash_erase_unit_size = self._read_flash_erase_unit_size()
         stored_size = self.info(InfoSelector.STORED_SIZE)
         stored_crc = self.info(InfoSelector.STORED_CRC)
         uid_words = (
@@ -647,6 +652,7 @@ class BootloaderClient(_RawEndpoint):
             capabilities=capabilities,
             app_base=app_base,
             app_max_size=app_max_size,
+            flash_erase_unit_size=flash_erase_unit_size,
             stored_size=stored_size,
             stored_crc=stored_crc,
             uid_words=uid_words,
@@ -793,11 +799,41 @@ class BootloaderClient(_RawEndpoint):
                 f"expected exactly {expected}"
             )
 
-    def erase(self, app_base: int, image_size: int) -> int:
+    def _read_flash_erase_unit_size(self) -> int:
+        try:
+            unit_size = self.info(InfoSelector.FLASH_ERASE_UNIT_SIZE)
+        except NackError as exc:
+            if exc.code is not NackCode.INVALID_COMMAND:
+                raise
+            LOGGER.warning(
+                "target does not advertise its Flash erase unit; "
+                "using the legacy value %d bytes",
+                FLASH_ERASE_BLOCK_SIZE,
+            )
+            return FLASH_ERASE_BLOCK_SIZE
+        if unit_size <= 0 or (unit_size & (unit_size - 1)) != 0:
+            raise ProtocolError(
+                f"device reported invalid Flash erase unit size {unit_size}"
+            )
+        return unit_size
+
+    def erase(
+        self,
+        app_base: int,
+        image_size: int,
+        *,
+        erase_unit_size: int | None = None,
+    ) -> int:
         if image_size <= 0:
             raise ConfigurationError("erase image size must be greater than zero")
+        if erase_unit_size is None:
+            erase_unit_size = self._read_flash_erase_unit_size()
+        if erase_unit_size <= 0:
+            raise ConfigurationError(
+                "Flash erase unit size must be greater than zero"
+            )
         self._ensure_profile()
-        page_count = math.ceil(image_size / FLASH_ERASE_BLOCK_SIZE)
+        page_count = math.ceil(image_size / erase_unit_size)
         self._prepare_target()
         last_error: ResponseTimeout | None = None
         for attempt in range(1, self.retries + 2):
@@ -1081,6 +1117,7 @@ class BootloaderClient(_RawEndpoint):
 
         app_base = self.info(InfoSelector.APP_BASE)
         app_max_size = self.info(InfoSelector.APP_MAX_SIZE)
+        flash_erase_unit_size = self._read_flash_erase_unit_size()
         if app_max_size < MIN_IMAGE_SIZE:
             raise ProtocolError(
                 f"device reported invalid APP_MAX_SIZE value {app_max_size}"
@@ -1096,7 +1133,11 @@ class BootloaderClient(_RawEndpoint):
         try:
             block_size = self.start_update(len(firmware))
             self.set_image_crc(image_crc)
-            self.erase(app_base, len(firmware))
+            self.erase(
+                app_base,
+                len(firmware),
+                erase_unit_size=flash_erase_unit_size,
+            )
             if progress is not None:
                 progress(0, len(firmware))
             for offset in range(0, len(firmware), block_size):

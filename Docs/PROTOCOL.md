@@ -1,10 +1,12 @@
-# Protocolo CanLoader v2 sobre CAN/J1939
+# Protocolo do CanLoader sobre CAN/J1939
 
 ## 1. Escopo e declaração de conformidade
 
-Este documento é o contrato on-wire do CanLoader v2. O v2 é o único protocolo
-aceito pelo firmware e pela ferramenta host; não existe fallback para os IDs de
-11 bits do v1.
+Este documento é o contrato on-wire do CanLoader. O valor `0x02` no campo de
+versão identifica internamente o formato atual das mensagens; ele não designa
+uma segunda versão lançada do produto. Esse é o único formato aceito pelo
+firmware e pela ferramenta host. Não existe fallback para o protótipo anterior
+baseado em IDs de 11 bits.
 
 O perfil combina três categorias que precisam permanecer distintas:
 
@@ -20,7 +22,7 @@ J1939/73_202412 para diagnóstico e J1939DA_202607 para atribuições. O conteú
 integral dessas publicações não acompanha o repositório. Portanto, o texto
 correto é:
 
-> CanLoader v2 implementa framing J1939 de 29 bits, gestão de endereço e TP
+> CanLoader implementa framing J1939 de 29 bits, gestão de endereço e TP
 > clássico, além de um perfil de escrita baseado em DM14/DM15/DM16 históricos.
 > O ciclo de vida da imagem usa Proprietary A. O projeto não foi certificado
 > contra as publicações SAE atuais.
@@ -224,7 +226,8 @@ O comando `canloader ls` coleta por NAME, não por ordem de chegada.
 Address Claim apenas encontra ECUs J1939. Para distinguir um CanLoader, o host
 envia `IDENTIFY` Proprietary A a cada SA não ambíguo. Só classifica o peer como
 CanLoader quando a resposta correlacionada anuncia o endereço esperado, versão
-2, target code `0xF1` e os flags J1939, Address Claim e TP RX.
+2, um target code suportado (`0xF1` para STM32F103C8 ou `0xB1` para
+STM32G0B1RE) e os flags J1939, Address Claim e TP RX.
 
 ## 7. Commanded Address
 
@@ -377,7 +380,7 @@ copiar dados e limita cada nova concessão ao tamanho anunciado no CTS. O target
 pressupõe que o sender aguarde essa concessão; a limitação física descrita em
 `LIMITATIONS.md` impede afirmar que um burst adiantado é sempre descartado.
 
-### 8.4 Exemplo de DM16 com bloco de 100 bytes
+### 8.4 Exemplo de DM16 com bloco de 100 bytes no F103
 
 O payload lógico tem 101 bytes: `FF` seguido dos 100 bytes crus. São necessários
 15 TP.DT:
@@ -397,6 +400,9 @@ TP.DT, o target enfileira EOM_ACK, programa e relê a Flash e então enfileira
 DM15. O bxCAN usa prioridade FIFO por ordem de solicitação (`TXFP=1`) para que
 DM15 não ultrapasse o EOM_ACK por ter CAN-ID numericamente menor. O host também
 preserva um DM15 eventualmente observado enquanto aguarda TP.CM.
+
+No G0, o bloco anunciado é 96 bytes. O payload lógico tem 97 bytes e ocupa 14
+TP.DT. O formato não muda; somente o tamanho retornado por `START_UPDATE` muda.
 
 ## 9. DM14 — Memory Access Request
 
@@ -451,25 +457,25 @@ Directed Spatial Addressing (`Pointer Type = 1`) não é implementado.
 
 ### 9.3 ERASE
 
-Para ERASE, `length` é a quantidade de blocos de erase definidos pelo device,
-e não a quantidade de bytes. O CanLoader define um bloco como uma página Flash
-de 1024 bytes.
+Para ERASE, `length` é a quantidade de unidades de apagamento definidas pelo
+device, e não a quantidade de bytes. A ferramenta obtém essa unidade pelo
+seletor INFO 11: 1024 bytes no F103 e 2048 bytes no G0.
 
 ```text
 command       = 0
 pointer_type  = 0
-pointer       = APP_BASE, alinhado a 1024
-length        = ceil(image_size / 1024)
+pointer       = APP_BASE, alinhado a erase_unit
+length        = ceil(image_size / erase_unit)
 key           = FFFF
 ```
 
 O target recusa zero páginas, desalinhamento, overflow e qualquer intervalo que
 saia da partição de aplicação ou alcance bootloader/configuração/metadata. Para
-uma imagem máxima de 44032 bytes, `length=43`.
+uma imagem máxima, o resultado é 43 páginas no F103 e 239 no G0.
 
 O ERASE de toda a área necessária é uma única operação DM14. Enviar
-`length=1024` significaria 1024 páginas, não 1024 bytes, e é inválido para esse
-target.
+`length=2048` significaria 2048 unidades, não 2048 bytes, e é inválido para os
+targets atuais.
 
 ### 9.4 WRITE
 
@@ -479,13 +485,14 @@ Cada WRITE abre exatamente um bloco da imagem:
 command       = 2
 pointer_type  = 0
 pointer       = APP_BASE + committed_offset
-length        = min(100, image_size - committed_offset)
+length        = min(block_size, image_size - committed_offset)
 key           = FFFF
 ```
 
 O limite geral de DM16 é 1784 bytes crus, mas o perfil CanLoader limita cada
-WRITE a 100 bytes para manter uso de RAM e idempotência equivalentes ao design
-original. Somente o último bloco pode ter menos de 100 bytes.
+WRITE a no máximo 100 bytes. O valor efetivo é informado no ACK de
+`START_UPDATE`: 100 no F103 e 96 no G0. Somente o último bloco pode ser menor
+que o valor anunciado.
 
 O target valida estado de manifest, Tool proprietário da sessão, endereço
 esperado, comprimento exato, faixa de Flash e ausência de outro DM/TP ativo.
@@ -671,7 +678,7 @@ rejeitado com `BOOT_ERROR_SESSION`.
 |---|---:|---|---|
 | `IDENTIFY` | `0x01` | `0 / 0`; stateless | capabilities |
 | `INFO` | `0x02` | selector / `0`; stateless | valor do selector |
-| `START_UPDATE` | `0x10` | `0 / image_size`; session não zero | block size, atualmente 100 |
+| `START_UPDATE` | `0x10` | `0 / image_size`; session não zero | block size: 100 no F103, 96 no G0 |
 | `SET_IMAGE_CRC` | `0x11` | `0 / expected_crc32`; owner/session | CRC ecoado |
 | `FINALIZE` | `0x30` | `0 / expected_crc32`; todos os bytes e nenhum close | CRC calculado |
 | `VERIFY` | `0x31` | `0 / 0`; stateless | CRC persistido |
@@ -687,9 +694,10 @@ Python e devem permanecer idênticos. O `value` de NACK nunca é interpretado co
 um Error Indicator SAE; são namespaces diferentes.
 
 Seletores INFO: `0` capabilities, `1` APP_BASE, `2` APP_MAX_SIZE, `3` tamanho
-armazenado, `4` CRC armazenado, `5..7` words UID96, `8..9` NAME low/high e `10`
-SA atual. Capabilities usa flags nos bits `0..5`, SA em `15..8`, versão em
-`23..16` e target code `0xF1` em `31..24`. Os códigos NACK `0..17` estão
+armazenado, `4` CRC armazenado, `5..7` words UID96, `8..9` NAME low/high, `10`
+SA atual e `11` tamanho em bytes da unidade de apagamento da Flash. Capabilities
+usa flags nos bits `0..5`, SA em `15..8`, versão em `23..16` e target code em
+`31..24`. Os códigos NACK `0..17` estão
 enumerados na documentação de implementação e nos headers C/Python.
 
 Durante um update, `RUN_APPLICATION`, `VERIFY` e `ENTER_BOOTLOADER` são
@@ -722,7 +730,9 @@ Tool                                              Target
  |--- PropA IDENTIFY ------------------------------>|
  |<-- PropA ACK ------------------------------------|
  |--- PropA START_UPDATE(size, session) ----------->|
- |<-- PropA ACK(block_size=100) --------------------|
+ |<-- PropA ACK(block_size do target) --------------|
+ |--- PropA INFO(FLASH_ERASE_UNIT_SIZE) ----------->|
+ |<-- PropA ACK(erase_unit) ------------------------|
  |--- PropA SET_IMAGE_CRC(crc32, session) -------->|
  |<-- PropA ACK ------------------------------------|
  |--- DM14 ERASE(APP_BASE, pages, FFFF) ---------->|
@@ -730,7 +740,7 @@ Tool                                              Target
  |<-- DM15 COMPLETED ou FAILED ---------------------|
  |--- DM14 OPERATION COMPLETED(APP_BASE,pages) ---->|
  |                                                  |
- |    para cada bloco de até 100 bytes:             |
+ |    para cada bloco do tamanho anunciado:         |
  |--- DM14 WRITE(address, length, FFFF) ---------->|
  |<-- DM15 PROCEED(length, Seed=FFFF) --------------|
  |--- DM16 direto, se length <= 7 ----------------->|
@@ -755,7 +765,7 @@ Invariantes:
 - nenhuma página de aplicação é apagada antes de manifest e CRC serem aceitos e
   metadata `UPDATING` ser persistida;
 - ERASE cobre somente as páginas necessárias à imagem;
-- WRITE começa em `APP_BASE` e avança sem lacunas em blocos de 100 bytes;
+- WRITE começa em `APP_BASE` e avança sem lacunas pelo bloco anunciado;
 - DM16 nunca precede DM15 PROCEED;
 - EOM_ACK é enfileirado ao concluir o TP; DM15 vem depois da tentativa de
   programação e reflete o resultado real da Flash;
@@ -802,7 +812,7 @@ pedido.
 
 O protocolo garante limites e integridade acidental, não autenticidade:
 
-- somente `[0x08005000, 0x0800FC00)` é apagável/gravável;
+- somente a região `APPLICATION` definida pelo target é apagável/gravável;
 - bootloader, configuração persistente e metadata são excluídos do pointer
   aceito em DM14;
 - soma `pointer+length`, arredondamento de páginas e conversões são verificadas

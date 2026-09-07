@@ -1,13 +1,20 @@
 # Mapa de memória e formatos persistentes
 
-## 1. Premissas do target
+## 1. Premissas dos targets
 
-O target suportado nesta revisão é o STM32F103C8Tx configurado com:
+Esta revisão contém dois mapas explícitos:
 
-- Flash interna de 64 KiB em `0x08000000..0x0800FFFF`;
-- SRAM de 20 KiB em `0x20000000..0x20004FFF`;
-- página mínima de erase de 1024 bytes;
-- programação mínima de Flash por halfword de 2 bytes;
+| Propriedade | STM32F103C8Tx | STM32G0B1RE |
+|---|---:|---:|
+| Flash interna | 64 KiB | 512 KiB |
+| SRAM | 20 KiB | 144 KiB |
+| unidade de erase | 1024 B | 2048 B |
+| unidade de programação | 2 B | 8 B |
+| base da aplicação | `0x08005000` | `0x08008000` |
+| tamanho máximo da aplicação | 44032 B | 489472 B |
+
+Ambos usam:
+
 - aplicação *single-slot*;
 - uma página separada para configuração do dispositivo;
 - uma página final separada para metadata da imagem.
@@ -15,7 +22,7 @@ O target suportado nesta revisão é o STM32F103C8Tx configurado com:
 Os intervalos abaixo são parte do ABI entre linker, bootloader, aplicação,
 host e testes. Alterá-los exige rebuild coordenado de todos esses componentes.
 
-## 2. Particionamento da Flash
+## 2. Particionamento da Flash do STM32F103C8Tx
 
 | Região | Início | Fim inclusivo | Fim exclusivo | Tamanho |
 |---|---:|---:|---:|---:|
@@ -68,47 +75,63 @@ A medição integrada atual é:
 Essa medição é informativa, não um limite congelado. O relatório de tamanho e
 o `.map` precisam ser arquivados novamente em cada build de liberação.
 
+### 2.2 Particionamento do STM32G0B1RE
+
+| Região | Início | Fim inclusivo | Fim exclusivo | Tamanho |
+|---|---:|---:|---:|---:|
+| código do bootloader | `0x08000000` | `0x080077FF` | `0x08007800` | `0x7800` = 30 KiB |
+| configuração do dispositivo | `0x08007800` | `0x08007FFF` | `0x08008000` | `0x800` = 2 KiB |
+| aplicação | `0x08008000` | `0x0807F7FF` | `0x0807F800` | `0x77800` = 478 KiB = 489472 B |
+| metadata | `0x0807F800` | `0x0807FFFF` | `0x08080000` | `0x800` = 2 KiB |
+
+`Targets/stm32g0b1re/STM32G0B1RETX_BOOT_FLASH.ld` limita o código a
+30 KiB. `TestApplication/linker_stm32g0b1re.ld` origina a aplicação em
+`0x08008000` e termina antes da última página. O port exige o mapeamento padrão
+dos bancos (`nSWAP_BANK=1`) e divide apagamentos que cruzem `0x08040000`.
+
 ## 3. Proteções de acesso
 
 A interface `boot_flash_*` recebe uma enumeração de região e offset relativo,
-não um endereço físico fornecido pelo barramento. Para o STM32F1:
+não um endereço físico fornecido pelo barramento. Cada port resolve
+`APPLICATION`, `METADATA` e `DEVICE_CONFIG` para os intervalos do seu target.
+Em ambos:
 
-- `APPLICATION` resolve apenas para `[0x08005000, 0x0800FC00)`;
-- `METADATA` resolve apenas para `[0x0800FC00, 0x08010000)`;
-- `DEVICE_CONFIG` resolve apenas para `[0x08004C00, 0x08005000)`;
 - offset, tamanho e subtrações são validados antes de calcular o endereço;
-- erase exige offset e tamanho múltiplos de 1024;
-- write exige offset e tamanho múltiplos de 2;
+- erase exige offset e tamanho múltiplos da unidade do target;
+- write exige offset e tamanho múltiplos da unidade de programação;
 - erase e programação são verificados por leitura posterior.
 
 DM14 usa endereço direto de 32 bits, mas `bootloader.c` só aceita o próximo
 endereço esperado da aplicação. O host não consegue usar DM14 para escrever o
 bootloader, a configuração ou a metadata.
 
-O MCU também é conferido em runtime: o port lê o registrador de tamanho da
-Flash e recusa inicialização se detectar menos de 64 KiB.
+O MCU também é conferido em runtime: cada port lê o registrador de tamanho da
+Flash e recusa uma capacidade menor que a configurada. O G0 recusa também o
+bank swap, pois seu cálculo de banco pressupõe o mapa padrão.
 
 ## 4. ERASE e WRITE
 
 No perfil v2, `DM14.length` muda de unidade conforme a operação:
 
-- em ERASE, significa quantidade de páginas de 1024 bytes;
+- em ERASE, significa quantidade de unidades de apagamento;
 - em WRITE, significa quantidade de bytes crus do bloco DM16.
 
 Para uma imagem de `image_size` bytes:
 
 ```text
-page_count = ceil(image_size / 1024)
-erase_range = [0x08005000, 0x08005000 + page_count*1024)
+erase_unit = INFO(FLASH_ERASE_UNIT_SIZE)
+page_count = ceil(image_size / erase_unit)
+erase_range = [APP_BASE, APP_BASE + page_count*erase_unit)
 ```
 
-O maior binário aceito tem 44032 bytes e ocupa exatamente 43 páginas. Um valor
-ERASE `length=1024` pediria 1024 páginas, não 1024 bytes, e deve ser rejeitado.
+No F103, a unidade vale 1024 B e o máximo ocupa 43 páginas. No G0, ela vale
+2048 B e o máximo ocupa 239 páginas. Um ERASE `length=2048` pediria 2048
+unidades, não 2048 bytes, e deve ser rejeitado.
 
-WRITE avança sequencialmente em blocos de 100 bytes. O último bloco pode ser
-menor. Se ele tiver comprimento ímpar, o bootloader acrescenta `0xFF` apenas ao
-buffer de programação para formar o último halfword. Esse padding não integra
-`image_size`, DM16 nem CRC.
+WRITE avança sequencialmente pelo bloco anunciado em `START_UPDATE`: 100 B no
+F103 e 96 B no G0. O último bloco pode ser menor. O bootloader acrescenta
+`0xFF` apenas no buffer físico para completar a unidade de 2 ou 8 B. Esse
+padding não integra `image_size`, DM16 nem CRC.
 
 ## 5. Vetores da aplicação
 
@@ -116,19 +139,19 @@ Os primeiros oito bytes do binário são little-endian:
 
 | Offset | Campo | Validação |
 |---:|---|---|
-| `0x00..0x03` | MSP inicial | `>0x20000000`, `<=0x20005000` e alinhado em 8 bytes |
-| `0x04..0x07` | Reset Handler | bit Thumb igual a 1 e endereço físico dentro de `[0x08005000, 0x08005000+image_size)` |
+| `0x00..0x03` | MSP inicial | dentro da SRAM do target e alinhado em 8 bytes |
+| `0x04..0x07` | Reset Handler | bit Thumb igual a 1 e endereço físico dentro de `[APP_BASE, APP_BASE+image_size)` |
 
-O tamanho mínimo da imagem é, portanto, 8 bytes. A aplicação precisa ter sua
-vector table em `0x08005000` e código de startup compatível com esse endereço.
-No handoff, o bootloader grava `SCB->VTOR=0x08005000`, carrega MSP e salta para
-o Reset Handler após limpar o estado de interrupções.
+O tamanho mínimo da imagem é, portanto, 8 bytes. A vector table deve estar no
+`APP_BASE` do target (`0x08005000` ou `0x08008000`). No handoff, o bootloader
+grava esse endereço em `SCB->VTOR`, carrega MSP e salta para o Reset Handler
+após limpar o estado de interrupções.
 
 ## 6. Journal persistente de NAME e preferred SA
 
-A página em `0x08004C00` é um journal append-only de 32 registros de 32 bytes.
-Cada novo preferred SA é gravado em um slot apagado; quando todos os slots
-foram usados, a página é apagada e o journal reinicia no slot zero.
+A página de configuração é um journal append-only de registros de 32 bytes. O
+F103 dispõe de 32 slots em `0x08004C00`; o G0 dispõe de 64 em `0x08007800`.
+Quando todos os slots são usados, a página é apagada e reinicia no slot zero.
 
 ### 6.1 Registro v2
 
@@ -157,12 +180,14 @@ A gravação segue:
 1. localizar o primeiro slot apagado e a geração válida mais nova;
 2. se a página estiver cheia, apagá-la;
 3. montar o registro com `commit=FFFF`;
-4. gravar bytes `0..27`;
-5. programar `commit=0000` em operação separada;
+4. gravar as unidades anteriores àquela que contém o commit;
+5. programar por último a unidade que contém `commit=0000`;
 6. reler o journal e conferir todos os campos.
 
-Uma queda antes do passo 5 não promove o registro parcial. Uma queda durante o
-erase da página cheia pode eliminar a preferência anterior; no boot seguinte o
+No F103, o passo 4 grava `0..27` e o passo 5 grava os 2 bytes do commit. No G0,
+o passo 4 grava `0..23` e o passo 5 grava a unidade `24..31`, que contém CRC,
+commit e reserva. Uma queda antes do passo 5 não promove o registro parcial.
+Uma queda durante o erase da página cheia pode eliminar a preferência anterior; no boot seguinte o
 firmware recupera o default derivado do UID e `0x80`. Portanto o journal reduz
 desgaste e rejeita registros incompletos, mas não é uma redundância de duas
 páginas.
@@ -184,31 +209,32 @@ SAE e garantir NAME único.
 
 ## 7. Metadata da imagem
 
-A página em `0x0800FC00` começa com um registro serializado de 30 bytes. O
-restante permanece apagado nesta versão.
+A página de metadata começa em `0x0800FC00` no F103 e `0x0807F800` no G0. O
+cabeçalho comum ocupa 24 bytes; os markers seguintes ocupam uma unidade de
+programação independente.
 
 | Offset | Tamanho | Campo | Valor/regra |
 |---:|---:|---|---|
 | `0..3` | 4 | `magic` | `0x444D4C43`, bytes `43 4C 4D 44` (`CLMD`) |
 | `4..5` | 2 | `format_version` | `1` |
 | `6..7` | 2 | `protocol_version` | `2` |
-| `8..11` | 4 | `image_size` | `8..44032` |
+| `8..11` | 4 | `image_size` | `8..BOOT_APPLICATION_MAX_SIZE` |
 | `12..15` | 4 | `image_crc32` | CRC-32/ISO-HDLC da imagem |
 | `16..19` | 4 | `image_version` | `0`, reservado para evolução |
 | `20..23` | 4 | `header_crc32` | CRC-32/ISO-HDLC dos bytes `0..19` |
-| `24..25` | 2 | marker `update` | `0000` quando iniciado |
-| `26..27` | 2 | marker `valid` | `0000` quando promovido |
-| `28..29` | 2 | marker `invalid` | `0000` quando invalidado |
+| a partir de `24` | 2 ou 8 | marker `update` | todos `00` quando iniciado |
+| unidade seguinte | 2 ou 8 | marker `valid` | todos `00` quando promovido |
+| unidade seguinte | 2 ou 8 | marker `invalid` | todos `00` quando invalidado |
 
-Cada marker ocupa uma unidade física independente. Estado apagado é `FFFF` e
-estado marcado é `0000`.
+O registro serializado ocupa 30 bytes no F103 e 48 bytes no G0. Estado apagado
+é a unidade inteira em `FF`; estado marcado é a unidade inteira em `00`.
 
 | Estado interpretado | update | valid | invalid | Executável? |
 |---|---|---|---|---|
 | vazio/ilegível | qualquer combinação inválida | | | não |
-| `UPDATING` | `0000` | `FFFF` | `FFFF` | não |
-| `VALID` | `0000` | `0000` | `FFFF` | somente após revalidar imagem |
-| `INVALID` | `0000` | qualquer | `0000` | não |
+| `UPDATING` | marcado | apagado | apagado | não |
+| `VALID` | marcado | marcado | apagado | somente após revalidar imagem |
+| `INVALID` | marcado | qualquer | marcado | não |
 
 `invalid` tem precedência. Magic, versão, protocolo, tamanho ou CRC de cabeçalho
 inválidos também tornam a imagem não executável.
@@ -235,10 +261,10 @@ aplicação começou.
 Qualquer mudança precisa manter coerentes:
 
 - constantes e asserts de `Config/boot_config.h`;
-- `STM32F103C8TX_FLASH.ld`;
+- linker do bootloader e header em `Config/targets/`;
 - linker e vector table da aplicação;
 - limites do port de Flash;
-- seletores INFO `APP_BASE` e `APP_MAX_SIZE`;
+- seletores INFO `APP_BASE`, `APP_MAX_SIZE` e `FLASH_ERASE_UNIT_SIZE`;
 - page count de DM14 ERASE;
 - testes C e Python de boundary/overflow;
 - metadata `protocol_version` e estratégia de migração;

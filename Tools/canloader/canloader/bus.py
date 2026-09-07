@@ -48,7 +48,7 @@ class PythonCanBus:
                 raise CanBusError(f"failed to receive CAN frame: {exc}") from exc
             if message is None:
                 return None
-            # CanLoader v2 is exclusively J1939 data traffic. Filtering here
+            # CanLoader uses exclusively J1939 data traffic. Filtering here
             # keeps backend-specific RTR/error frames out of all state machines.
             if (
                 not bool(getattr(message, "is_extended_id", False))

@@ -1,4 +1,4 @@
-# Relação do CanLoader v2 com o TCC
+# Relação do CanLoader com o TCC
 
 ## 1. Objetivo deste registro
 
@@ -6,20 +6,21 @@ Este arquivo separa três coisas que não devem ser confundidas na escrita do
 TCC II:
 
 1. requisitos e intenções apresentados no trabalho acadêmico;
-2. decisões concretas da implementação CanLoader v2;
+2. decisões concretas da implementação CanLoader;
 3. itens ainda não demonstrados experimental ou normativamente.
 
-O v2 foi criado justamente para aproximar a implementação do recorte J1939 do
-TCC. Ele substitui o protocolo v1 de 11 bits, mas essa evolução não transforma
-automaticamente o projeto em produto certificado SAE.
+O formato atual foi criado para aproximar a implementação do recorte J1939 do
+TCC. Ele substituiu um protótipo interno de 11 bits, mas essa evolução não
+transforma automaticamente o projeto em produto certificado SAE.
 
 ## 2. Matriz de aderência
 
-| Tema do TCC | Situação no v2 | Evidência/limite |
+| Tema do TCC | Situação atual | Evidência/limite |
 |---|---|---|
 | bootloader via CAN | implementado | update completo por CAN clássico a 500 kbit/s |
 | STM32F103/Blue Pill | implementado como primeiro target | HAL/CMSIS/linker específicos; hardware ainda precisa de ensaio documentado |
-| separação hardware/protocolo | implementado | `Portable/Inc`, port STM32F1 e módulos de protocolo independentes |
+| NUCLEO-G0B1RE | port implementado | build, linker, FDCAN, Flash e aplicação de referência; validação física pendente |
+| separação hardware/protocolo | implementado | `Portable/Inc`, ports STM32F1/STM32G0 e módulos de protocolo independentes |
 | J1939 de 29 bits | implementado no framing | CAN EFF, PGN, PDU1/PDU2 e prioridade 6 |
 | gestão de nós J1939 | implementado como perfil | NAME, Request, Address Claimed, disputa, Cannot Claim e Commanded Address |
 | DM14/DM15/DM16 | implementado como subset | ERASE/WRITE/STATUS/close; sem READ, EDCP ou seed-key |
@@ -30,7 +31,7 @@ automaticamente o projeto em produto certificado SAE.
 | não executar imagem parcial | implementado | marker `UPDATING/INVALID` antes do jump |
 | rollback | não implementado | single-slot perde a imagem antiga após erase |
 | segurança/autenticidade | não implementado | sem assinatura, MAC, criptografia ou anti-rollback |
-| portabilidade a outro MCU | arquitetura preparada | somente STM32F1 implementado e testado em build |
+| portabilidade a outro MCU | demonstrada em código para dois alvos | F103 e G0B1RE compilam; não implica suporte automático a outros STM32 |
 | diferentes bitrates/CAN FD | não implementado | CAN clássico fixo em 500 kbit/s |
 | validação experimental | procedimento disponível | resultados precisam ser executados e anexados |
 
@@ -56,7 +57,7 @@ e existem escolhas deliberadamente proprietárias.
 
 Formulação recomendada para o TCC:
 
-> O CanLoader v2 implementa um perfil de bootloading em CAN clássico baseado
+> O CanLoader implementa um perfil de bootloading em CAN clássico baseado
 > nas camadas de enlace e gestão de rede SAE J1939, utiliza um subconjunto de
 > DM14/DM15/DM16 para acesso à memória e reserva um PGN Proprietary A para o
 > ciclo de vida específico da imagem. Não foi realizada certificação formal de
@@ -70,8 +71,8 @@ evita falsamente atribuir ao padrão mensagens que pertencem ao produto.
 
 Também são regras próprias do perfil:
 
-- bloco WRITE de 100 bytes;
-- ERASE com length expresso em páginas de 1024 bytes;
+- bloco WRITE anunciado pelo target: 100 B no F103 e 96 B no G0;
+- ERASE com length em unidades anunciadas por INFO: 1024 B no F103 e 2048 B no G0;
 - ownership por SA/sessão;
 - close repetindo pointer/length e timeout global de 5 s;
 - códigos NACK `0..17`;

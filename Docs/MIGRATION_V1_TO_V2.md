@@ -1,11 +1,11 @@
-# Migração incompatível do CanLoader v1 para o v2
+# Migração do protótipo de 11 bits para o protocolo atual
 
-## 1. Decisão de versão única
+## 1. Decisão de formato único
 
-O CanLoader v2 substitui integralmente o v1. O firmware, a aplicação de
-referência e o pacote Python não negociam nem aceitam frames v1. Um host v1 não
-atualiza um target v2, e um host v2 não tenta reconhecer os antigos IDs de
-11 bits.
+As designações v1 e v2 foram usadas internamente durante o desenvolvimento e
+não correspondem a lançamentos do CanLoader. O formato atual substitui
+integralmente o protótipo de 11 bits. Firmware, aplicação de referência e
+pacote Python não negociam nem aceitam os frames preliminares.
 
 A ruptura foi escolhida para o TCC II porque manter duas pilhas simultâneas
 aumentaria filtros, estados, testes e consumo de Flash, além de deixar ambíguo
@@ -13,7 +13,7 @@ qual protocolo forneceu identidade e autorização. A migração do próprio
 bootloader é feita por SWD/ST-LINK; o protocolo de update continua impedido de
 gravar sua partição.
 
-> O v2 não é anunciado como produto certificado SAE. J1939-21/J1939-81 dão a
+> O CanLoader não é anunciado como produto certificado SAE. J1939-21/J1939-81 dão a
 > base de enlace, endereçamento e TP; DM14/15/16 são um subconjunto baseado em
 > material público histórico de J1939-73; ciclo de vida, sessão e erros internos
 > permanecem extensões CanLoader.

@@ -1,4 +1,4 @@
-"""CanLoader v2 control messages and the DM14/DM15/DM16 profile."""
+"""Current CanLoader control messages and the DM14/DM15/DM16 profile."""
 
 from dataclasses import dataclass
 
