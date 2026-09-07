@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "test": "toolchain-version",
+  "command": [
+    "/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/arm-none-eabi-gcc",
+    "--version"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T13:15:00.594787-03:00",
+  "ended_at": "2026-08-25T13:15:00.634742-03:00",
+  "duration_seconds": 0.039922,
+  "exit_code": 0,
+  "interrupted": false,
+  "spawn_error": null,
+  "log": "commands/20260825T131500-0300-toolchain-version.log"
+}

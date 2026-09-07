@@ -1,0 +1,39 @@
+started_at=2026-08-25T07:31:39.086490-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=["/usr/sbin/networksetup", "-listallhardwareports"]
+
+
+Hardware Port: Ethernet Adapter (en3)
+Device: en3
+Ethernet Address: da:92:6a:ef:27:60
+
+Hardware Port: USB 10/100/1000 LAN
+Device: en5
+Ethernet Address: 00:e0:4c:68:05:32
+
+Hardware Port: Ethernet Adapter (en4)
+Device: en4
+Ethernet Address: da:92:6a:ef:27:61
+
+Hardware Port: Thunderbolt Bridge
+Device: bridge0
+Ethernet Address: 36:06:72:b8:1d:00
+
+Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: 74:a6:cd:92:12:e2
+
+Hardware Port: Thunderbolt 1
+Device: en1
+Ethernet Address: 36:06:72:b8:1d:00
+
+Hardware Port: Thunderbolt 2
+Device: en2
+Ethernet Address: 36:06:72:b8:1d:04
+
+VLAN Configurations
+===================
+
+ended_at=2026-08-25T07:31:39.111909-03:00
+duration_seconds=0.025412
+exit_code=0

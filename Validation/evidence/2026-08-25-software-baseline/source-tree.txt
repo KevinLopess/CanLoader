@@ -1,0 +1,5 @@
+Commit auditado: 39492b1ad5c31735a07154a0705e499fac7d4a08
+
+Alterações rastreadas nos diretórios de implementação e testes:
+
+Arquivos não rastreados nesses diretórios:

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "test": "target-a-recover-valid",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "update",
+    "TestApplication/build/canloader_test_app.bin",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--address",
+    "0x80",
+    "--name",
+    "0x80000000000E30EA",
+    "--run",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T07:37:11.102282-03:00",
+  "ended_at": "2026-08-25T07:37:14.982765-03:00",
+  "duration_seconds": 3.880518,
+  "exit_code": 0,
+  "interrupted": false,
+  "log": "commands/20260825T073711-0300-target-a-recover-valid.log"
+}

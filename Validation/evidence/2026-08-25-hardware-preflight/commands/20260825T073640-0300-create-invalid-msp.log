@@ -1,0 +1,14 @@
+started_at=2026-08-25T07:36:40.830342-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=[".venv/bin/python", "-c", "from pathlib import Path; import hashlib,zlib; src=Path('TestApplication/build/canloader_test_app.bin'); dst=Path('Validation/evidence/2026-08-25-hardware-preflight/images/invalid-msp.raw'); data=bytearray(src.read_bytes()); data[:4]=(0).to_bytes(4,'little'); dst.write_bytes(data); print(f'path={dst}'); print(f'bytes={len(data)}'); print(f'msp=0x{int.from_bytes(data[:4],\"little\"):08X}'); print(f'reset_handler=0x{int.from_bytes(data[4:8],\"little\"):08X}'); print(f'sha256={hashlib.sha256(data).hexdigest()}'); print(f'crc32_iso_hdlc=0x{zlib.crc32(data)&0xffffffff:08X}')"]
+
+path=Validation/evidence/2026-08-25-hardware-preflight/images/invalid-msp.raw
+bytes=7320
+msp=0x00000000
+reset_handler=0x08006C39
+sha256=71f56f8d4299b943ece1014135f439d6d4b0c3281e8be14a123ef2e47f663f92
+crc32_iso_hdlc=0x3283DA62
+
+ended_at=2026-08-25T07:36:40.871162-03:00
+duration_seconds=0.040681
+exit_code=0

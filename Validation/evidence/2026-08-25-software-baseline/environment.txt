@@ -1,0 +1,59 @@
+started_at=2026-08-25T07:29:37-0300
+repository=/Users/kevinlopes/Projects/TCC/CanLoader
+commit=39492b1ad5c31735a07154a0705e499fac7d4a08
+commit_subject=Implement J1939 transport protocol with address claiming and testing
+python=/Users/kevinlopes/Projects/TCC/CanLoader/.venv/bin/python
+
+Darwin Computador.local 25.6.0 Darwin Kernel Version 25.6.0: Fri Jul 31 19:18:43 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T8112 arm64
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+
+Python 3.13.15
+Name: canloader
+Version: 0.2.0
+Summary: J1939 host updater for the CanLoader STM32 CAN bootloader
+Home-page: 
+Author: 
+Author-email: 
+License: 
+Location: /Users/kevinlopes/Projects/TCC/CanLoader/.venv/lib/python3.13/site-packages
+Editable project location: /Users/kevinlopes/Projects/TCC/CanLoader/Tools/canloader
+Requires: pyserial, python-can
+Required-by: 
+---
+Name: python-can
+Version: 4.6.1
+Summary: Controller Area Network interface module for Python
+Home-page: https://github.com/hardbyte/python-can
+Author: python-can contributors
+Author-email: 
+License-Expression: LGPL-3.0-only
+Location: /Users/kevinlopes/Projects/TCC/CanLoader/.venv/lib/python3.13/site-packages
+Requires: packaging, typing_extensions, wrapt
+Required-by: canloader
+---
+Name: pyserial
+Version: 3.5
+Summary: Python Serial Port Extension
+Home-page: https://github.com/pyserial/pyserial
+Author: Chris Liechti
+Author-email: cliechti@gmx.net
+License: BSD
+Location: /Users/kevinlopes/Projects/TCC/CanLoader/.venv/lib/python3.13/site-packages
+Requires: 
+Required-by: canloader
+---
+Name: pytest
+Version: 9.1.1
+Summary: pytest: simple powerful testing with Python
+Home-page: https://docs.pytest.org/en/latest/
+Author: Brianna Laugher, Bruno Oliveira, Floris Bruynooghe, Freya Bruhin, Holger Krekel, Others (See AUTHORS), Ronny Pfannschmidt
+Author-email: 
+License-Expression: MIT
+Location: /Users/kevinlopes/Projects/TCC/CanLoader/.venv/lib/python3.13/site-packages
+Requires: iniconfig, packaging, pluggy, pygments
+Required-by: 
+
+GNU Make 3.81
+Copyright (C) 2006  Free Software Foundation, Inc.

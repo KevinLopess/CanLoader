@@ -1,0 +1,21 @@
+started_at=2026-08-25T07:31:28.552101-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=[".venv/bin/python", "-m", "serial.tools.list_ports", "-v"]
+
+4 ports found
+/dev/cu.Bluetooth-Incoming-Port
+    desc: n/a
+    hwid: n/a
+/dev/cu.QCYH3Pro    
+    desc: n/a
+    hwid: n/a
+/dev/cu.debug-console
+    desc: n/a
+    hwid: n/a
+/dev/cu.usbmodem2074318558421
+    desc: CANable2 b158aa7 github.com/normaldotcom/canable2.git
+    hwid: USB VID:PID=16D0:117E SER=207431855842 LOCATION=1-1.2
+
+ended_at=2026-08-25T07:31:28.589455-03:00
+duration_seconds=0.037341
+exit_code=0

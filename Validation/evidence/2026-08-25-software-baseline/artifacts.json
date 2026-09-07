@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "path": "build/bootloader/CanLoader.bin",
+      "evidence_path": "artifacts/bootloader.raw",
+      "bytes": 16468,
+      "sha256": "eebc7edc69570c966a4852ee1d62b411f9fa34df713968d71c98646a73ca1bb5",
+      "crc32_iso_hdlc": "0x561C5A84"
+    },
+    {
+      "path": "TestApplication/build/canloader_test_app.bin",
+      "evidence_path": "artifacts/reference-application.raw",
+      "bytes": 7320,
+      "sha256": "f44aaab027cc34e6cd5fa69c9f22ce90ba1931900cb969ce72b7c7cda6c64ee0",
+      "crc32_iso_hdlc": "0x7BB303AE"
+    }
+  ]
+}

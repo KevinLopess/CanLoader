@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "test": "create-invalid-msp",
+  "command": [
+    ".venv/bin/python",
+    "-c",
+    "from pathlib import Path; import hashlib,zlib; src=Path('TestApplication/build/canloader_test_app.bin'); dst=Path('Validation/evidence/2026-08-25-hardware-preflight/images/invalid-msp.raw'); data=bytearray(src.read_bytes()); data[:4]=(0).to_bytes(4,'little'); dst.write_bytes(data); print(f'path={dst}'); print(f'bytes={len(data)}'); print(f'msp=0x{int.from_bytes(data[:4],\"little\"):08X}'); print(f'reset_handler=0x{int.from_bytes(data[4:8],\"little\"):08X}'); print(f'sha256={hashlib.sha256(data).hexdigest()}'); print(f'crc32_iso_hdlc=0x{zlib.crc32(data)&0xffffffff:08X}')"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T07:36:40.830342-03:00",
+  "ended_at": "2026-08-25T07:36:40.871162-03:00",
+  "duration_seconds": 0.040681,
+  "exit_code": 0,
+  "interrupted": false,
+  "log": "commands/20260825T073640-0300-create-invalid-msp.log"
+}

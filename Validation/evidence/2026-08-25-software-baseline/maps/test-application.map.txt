@@ -1,0 +1,1002 @@
+Archive member included to satisfy reference by file (symbol)
+
+/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+                              build/boot_j1939_address_claim.o (__aeabi_uldivmod)
+/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+                              /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o) (__udivmoddi4)
+/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+                              /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o) (__aeabi_ldiv0)
+
+Discarded input sections
+
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .group         0x00000000        0xc build/main.o
+ .text          0x00000000        0x0 build/main.o
+ .data          0x00000000        0x0 build/main.o
+ .bss           0x00000000        0x0 build/main.o
+ .text.boot_flash_is_valid_range
+                0x00000000       0x26 build/main.o
+ .text.boot_flash_init
+                0x00000000        0x4 build/main.o
+ .comment       0x00000000       0x44 build/main.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/system_stm32f1xx.o
+ .text          0x00000000        0x0 build/system_stm32f1xx.o
+ .data          0x00000000        0x0 build/system_stm32f1xx.o
+ .bss           0x00000000        0x0 build/system_stm32f1xx.o
+ .text.SystemCoreClockUpdate
+                0x00000000       0x10 build/system_stm32f1xx.o
+ .rodata.APBPrescTable
+                0x00000000        0x8 build/system_stm32f1xx.o
+ .rodata.AHBPrescTable
+                0x00000000       0x10 build/system_stm32f1xx.o
+ .debug_macro   0x00000000      0xacc build/system_stm32f1xx.o
+ .debug_macro   0x00000000      0x34e build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0x2e build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0x22 build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0x1c build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0x22 build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0xbd build/system_stm32f1xx.o
+ .debug_macro   0x00000000      0xd23 build/system_stm32f1xx.o
+ .debug_macro   0x00000000     0xe09e build/system_stm32f1xx.o
+ .debug_macro   0x00000000       0x6d build/system_stm32f1xx.o
+ .comment       0x00000000       0x44 build/system_stm32f1xx.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_device_config.o
+ .text          0x00000000        0x0 build/boot_device_config.o
+ .data          0x00000000        0x0 build/boot_device_config.o
+ .bss           0x00000000        0x0 build/boot_device_config.o
+ .debug_macro   0x00000000      0xacc build/boot_device_config.o
+ .debug_macro   0x00000000       0x22 build/boot_device_config.o
+ .debug_macro   0x00000000      0x34e build/boot_device_config.o
+ .debug_macro   0x00000000       0x70 build/boot_device_config.o
+ .debug_macro   0x00000000      0x190 build/boot_device_config.o
+ .debug_macro   0x00000000      0x130 build/boot_device_config.o
+ .debug_macro   0x00000000       0x16 build/boot_device_config.o
+ .debug_macro   0x00000000       0x2e build/boot_device_config.o
+ .comment       0x00000000       0x44 build/boot_device_config.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_metadata.o
+ .text          0x00000000        0x0 build/boot_metadata.o
+ .data          0x00000000        0x0 build/boot_metadata.o
+ .bss           0x00000000        0x0 build/boot_metadata.o
+ .text.metadata_program_marker
+                0x00000000       0x18 build/boot_metadata.o
+ .text.boot_metadata_begin
+                0x00000000       0xb0 build/boot_metadata.o
+ .text.boot_metadata_mark_valid
+                0x00000000       0x3c build/boot_metadata.o
+ .text.boot_metadata_mark_invalid
+                0x00000000       0x3c build/boot_metadata.o
+ .debug_macro   0x00000000      0xacc build/boot_metadata.o
+ .debug_macro   0x00000000       0x22 build/boot_metadata.o
+ .debug_macro   0x00000000      0x34e build/boot_metadata.o
+ .debug_macro   0x00000000      0x190 build/boot_metadata.o
+ .debug_macro   0x00000000      0x130 build/boot_metadata.o
+ .debug_macro   0x00000000       0x16 build/boot_metadata.o
+ .comment       0x00000000       0x44 build/boot_metadata.o
+ .group         0x00000000        0xc build/boot_crc32.o
+ .group         0x00000000        0xc build/boot_crc32.o
+ .group         0x00000000        0xc build/boot_crc32.o
+ .text          0x00000000        0x0 build/boot_crc32.o
+ .data          0x00000000        0x0 build/boot_crc32.o
+ .bss           0x00000000        0x0 build/boot_crc32.o
+ .text.boot_crc32_finalize
+                0x00000000        0x4 build/boot_crc32.o
+ .debug_macro   0x00000000      0xacc build/boot_crc32.o
+ .debug_macro   0x00000000      0x190 build/boot_crc32.o
+ .debug_macro   0x00000000      0x34e build/boot_crc32.o
+ .comment       0x00000000       0x44 build/boot_crc32.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939.o
+ .text          0x00000000        0x0 build/boot_j1939.o
+ .data          0x00000000        0x0 build/boot_j1939.o
+ .bss           0x00000000        0x0 build/boot_j1939.o
+ .debug_macro   0x00000000      0xacc build/boot_j1939.o
+ .debug_macro   0x00000000       0x22 build/boot_j1939.o
+ .debug_macro   0x00000000      0x34e build/boot_j1939.o
+ .debug_macro   0x00000000       0x16 build/boot_j1939.o
+ .debug_macro   0x00000000       0x40 build/boot_j1939.o
+ .debug_macro   0x00000000      0x190 build/boot_j1939.o
+ .debug_macro   0x00000000      0x130 build/boot_j1939.o
+ .comment       0x00000000       0x44 build/boot_j1939.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_address_claim.o
+ .text          0x00000000        0x0 build/boot_j1939_address_claim.o
+ .data          0x00000000        0x0 build/boot_j1939_address_claim.o
+ .bss           0x00000000        0x0 build/boot_j1939_address_claim.o
+ .text.boot_j1939_address_claim_state
+                0x00000000        0x6 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000      0xacc build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000       0x22 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000      0x34e build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000       0x16 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000      0x190 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000      0x130 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000       0x46 build/boot_j1939_address_claim.o
+ .debug_macro   0x00000000       0x2e build/boot_j1939_address_claim.o
+ .comment       0x00000000       0x44 build/boot_j1939_address_claim.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_j1939_tp.o
+ .text          0x00000000        0x0 build/boot_j1939_tp.o
+ .data          0x00000000        0x0 build/boot_j1939_tp.o
+ .bss           0x00000000        0x0 build/boot_j1939_tp.o
+ .text.boot_j1939_tp_rx_expect_rts
+                0x00000000       0x4a build/boot_j1939_tp.o
+ .text.boot_j1939_tp_rx_cancel
+                0x00000000       0x10 build/boot_j1939_tp.o
+ .text.boot_j1939_tp_rx_source
+                0x00000000        0xa build/boot_j1939_tp.o
+ .debug_macro   0x00000000      0xacc build/boot_j1939_tp.o
+ .debug_macro   0x00000000       0x22 build/boot_j1939_tp.o
+ .debug_macro   0x00000000      0x34e build/boot_j1939_tp.o
+ .debug_macro   0x00000000       0x16 build/boot_j1939_tp.o
+ .debug_macro   0x00000000      0x190 build/boot_j1939_tp.o
+ .debug_macro   0x00000000      0x130 build/boot_j1939_tp.o
+ .debug_macro   0x00000000       0x46 build/boot_j1939_tp.o
+ .debug_macro   0x00000000       0x2e build/boot_j1939_tp.o
+ .comment       0x00000000       0x44 build/boot_j1939_tp.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .group         0x00000000        0xc build/boot_protocol.o
+ .text          0x00000000        0x0 build/boot_protocol.o
+ .data          0x00000000        0x0 build/boot_protocol.o
+ .bss           0x00000000        0x0 build/boot_protocol.o
+ .text.boot_protocol_decode_dm14
+                0x00000000       0x96 build/boot_protocol.o
+ .text.boot_protocol_make_dm15
+                0x00000000       0x72 build/boot_protocol.o
+ .text.boot_protocol_decode_dm16
+                0x00000000       0x48 build/boot_protocol.o
+ .debug_macro   0x00000000      0xacc build/boot_protocol.o
+ .debug_macro   0x00000000       0x22 build/boot_protocol.o
+ .debug_macro   0x00000000      0x34e build/boot_protocol.o
+ .debug_macro   0x00000000       0x16 build/boot_protocol.o
+ .debug_macro   0x00000000       0x28 build/boot_protocol.o
+ .debug_macro   0x00000000      0x190 build/boot_protocol.o
+ .debug_macro   0x00000000      0x130 build/boot_protocol.o
+ .debug_macro   0x00000000       0x46 build/boot_protocol.o
+ .comment       0x00000000       0x44 build/boot_protocol.o
+ .text          0x00000000       0x14 build/startup_stm32f103c8tx.o
+ .data          0x00000000        0x0 build/startup_stm32f103c8tx.o
+ .bss           0x00000000        0x0 build/startup_stm32f103c8tx.o
+ .data          0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+ .bss           0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+ .data          0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+ .bss           0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+ .ARM.extab     0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+ .data          0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+ .bss           0x00000000        0x0 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x08005000         0x0000ac00         xr
+RAM              0x20000000         0x00005000         xrw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD build/main.o
+LOAD build/system_stm32f1xx.o
+LOAD build/boot_device_config.o
+LOAD build/boot_metadata.o
+LOAD build/boot_crc32.o
+LOAD build/boot_j1939.o
+LOAD build/boot_j1939_address_claim.o
+LOAD build/boot_j1939_tp.o
+LOAD build/boot_protocol.o
+LOAD build/startup_stm32f103c8tx.o
+LOAD /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a
+                0x20005000                        _estack = (ORIGIN (RAM) + LENGTH (RAM))
+                0x00000400                        _Min_Stack_Size = 0x400
+
+.isr_vector     0x08005000      0x10c
+                0x08005000                        . = ALIGN (0x80)
+ *(.isr_vector)
+ .isr_vector    0x08005000      0x10c build/startup_stm32f103c8tx.o
+                0x08005000                g_pfnVectors
+                0x0800510c                        . = ALIGN (0x4)
+
+.text           0x0800510c     0x1b78
+                0x0800510c                        . = ALIGN (0x4)
+ *(.text)
+ .text          0x0800510c       0x30 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+                0x0800510c                __aeabi_uldivmod
+ .text          0x0800513c      0x2f4 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+                0x0800513c                __udivmoddi4
+ .text          0x08005430        0x4 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+                0x08005430                __aeabi_ldiv0
+                0x08005430                __aeabi_idiv0
+ *(.text*)
+ .text.flash_wait_ready
+                0x08005434       0x20 build/main.o
+ .text.flash_unlock
+                0x08005454       0x28 build/main.o
+ .text.apply_claim_address_change
+                0x0800547c       0x38 build/main.o
+ .text.queue_frame.isra.0
+                0x080054b4       0x34 build/main.o
+ .text.collect_claim_tx
+                0x080054e8       0x28 build/main.o
+ .text.flush_tx
+                0x08005510       0xc0 build/main.o
+ .text.queue_control_response
+                0x080055d0       0x38 build/main.o
+ .text.memset   0x08005608       0x10 build/main.o
+                0x08005608                memset
+ .text.boot_platform_uid_word
+                0x08005618       0x16 build/main.o
+                0x08005618                boot_platform_uid_word
+ *fill*         0x0800562e        0x2 
+ .text.boot_flash_read
+                0x08005630       0x54 build/main.o
+                0x08005630                boot_flash_read
+ .text.boot_flash_erase
+                0x08005684       0x94 build/main.o
+                0x08005684                boot_flash_erase
+ .text.boot_flash_write
+                0x08005718       0xcc build/main.o
+                0x08005718                boot_flash_write
+ .text.SysTick_Handler
+                0x080057e4       0x10 build/main.o
+                0x080057e4                SysTick_Handler
+ .text.startup.main
+                0x080057f4      0x608 build/main.o
+                0x080057f4                main
+ .text.SystemInit
+                0x08005dfc       0x74 build/system_stm32f1xx.o
+                0x08005dfc                SystemInit
+ .text.__libc_init_array
+                0x08005e70        0x2 build/system_stm32f1xx.o
+                0x08005e70                __libc_init_array
+ *fill*         0x08005e72        0x2 
+ .text.scan_records
+                0x08005e74       0xf4 build/boot_device_config.o
+ .text.boot_device_config_defaults
+                0x08005f68       0x4a build/boot_device_config.o
+                0x08005f68                boot_device_config_defaults
+ .text.boot_device_config_read
+                0x08005fb2       0x34 build/boot_device_config.o
+                0x08005fb2                boot_device_config_read
+ .text.boot_device_config_load
+                0x08005fe6       0x18 build/boot_device_config.o
+                0x08005fe6                boot_device_config_load
+ *fill*         0x08005ffe        0x2 
+ .text.boot_device_config_store
+                0x08006000      0x134 build/boot_device_config.o
+                0x08006000                boot_device_config_store
+ .text.boot_device_config_store_preferred_address
+                0x08006134       0x3c build/boot_device_config.o
+                0x08006134                boot_device_config_store_preferred_address
+ .text.metadata_marker_is
+                0x08006170       0x14 build/boot_metadata.o
+ .text.boot_metadata_read
+                0x08006184       0xd0 build/boot_metadata.o
+                0x08006184                boot_metadata_read
+ .text.boot_crc32_update
+                0x08006254       0x2c build/boot_crc32.o
+                0x08006254                boot_crc32_update
+ .text.boot_crc32_compute
+                0x08006280       0x12 build/boot_crc32.o
+                0x08006280                boot_crc32_compute
+ .text.boot_j1939_make_id
+                0x08006292       0x42 build/boot_j1939.o
+                0x08006292                boot_j1939_make_id
+ .text.boot_j1939_decode_id
+                0x080062d4       0x5c build/boot_j1939.o
+                0x080062d4                boot_j1939_decode_id
+ .text.boot_j1939_decode_frame
+                0x08006330       0x18 build/boot_j1939.o
+                0x08006330                boot_j1939_decode_frame
+ .text.boot_j1939_make_frame
+                0x08006348       0x60 build/boot_j1939.o
+                0x08006348                boot_j1939_make_frame
+ .text.schedule_cannot_claim
+                0x080063a8       0x2c build/boot_j1939_address_claim.o
+ .text.queue_address_claim
+                0x080063d4       0x46 build/boot_j1939_address_claim.o
+ .text.boot_j1939_address_claim_init
+                0x0800641a       0x34 build/boot_j1939_address_claim.o
+                0x0800641a                boot_j1939_address_claim_init
+ .text.boot_j1939_address_claim_start
+                0x0800644e       0x40 build/boot_j1939_address_claim.o
+                0x0800644e                boot_j1939_address_claim_start
+ .text.boot_j1939_address_claim_restart
+                0x0800648e       0x30 build/boot_j1939_address_claim.o
+                0x0800648e                boot_j1939_address_claim_restart
+ .text.boot_j1939_address_claim_handle
+                0x080064be      0x10a build/boot_j1939_address_claim.o
+                0x080064be                boot_j1939_address_claim_handle
+ .text.boot_j1939_address_claim_task
+                0x080065c8       0x3a build/boot_j1939_address_claim.o
+                0x080065c8                boot_j1939_address_claim_task
+ .text.boot_j1939_address_claim_take_tx
+                0x08006602       0x28 build/boot_j1939_address_claim.o
+                0x08006602                boot_j1939_address_claim_take_tx
+ .text.boot_j1939_address_claim_take_address_changed
+                0x0800662a       0x1a build/boot_j1939_address_claim.o
+                0x0800662a                boot_j1939_address_claim_take_address_changed
+ .text.boot_j1939_address_claim_is_operational
+                0x08006644        0xc build/boot_j1939_address_claim.o
+                0x08006644                boot_j1939_address_claim_is_operational
+ .text.boot_j1939_address_claim_source_address
+                0x08006650        0xa build/boot_j1939_address_claim.o
+                0x08006650                boot_j1939_address_claim_source_address
+ .text.make_abort
+                0x0800665a       0x42 build/boot_j1939_tp.o
+ .text.make_cts
+                0x0800669c       0x46 build/boot_j1939_tp.o
+ .text.boot_j1939_tp_rx_init
+                0x080066e2        0xe build/boot_j1939_tp.o
+                0x080066e2                boot_j1939_tp_rx_init
+ .text.boot_j1939_tp_rx_allow_bam
+                0x080066f0       0x2a build/boot_j1939_tp.o
+                0x080066f0                boot_j1939_tp_rx_allow_bam
+ *fill*         0x0800671a        0x2 
+ .text.boot_j1939_tp_rx_handle
+                0x0800671c      0x378 build/boot_j1939_tp.o
+                0x0800671c                boot_j1939_tp_rx_handle
+ .text.boot_j1939_tp_rx_task
+                0x08006a94       0x46 build/boot_j1939_tp.o
+                0x08006a94                boot_j1939_tp_rx_task
+ .text.boot_j1939_tp_rx_data
+                0x08006ada        0x6 build/boot_j1939_tp.o
+                0x08006ada                boot_j1939_tp_rx_data
+ .text.boot_j1939_tp_rx_size
+                0x08006ae0        0x6 build/boot_j1939_tp.o
+                0x08006ae0                boot_j1939_tp_rx_size
+ .text.boot_j1939_tp_rx_pgn
+                0x08006ae6        0x6 build/boot_j1939_tp.o
+                0x08006ae6                boot_j1939_tp_rx_pgn
+ .text.boot_protocol_read_u16_le
+                0x08006aec        0x4 build/boot_protocol.o
+                0x08006aec                boot_protocol_read_u16_le
+ .text.boot_protocol_read_u24_le
+                0x08006af0       0x10 build/boot_protocol.o
+                0x08006af0                boot_protocol_read_u24_le
+ .text.boot_protocol_read_u32_le
+                0x08006b00       0x10 build/boot_protocol.o
+                0x08006b00                boot_protocol_read_u32_le
+ .text.boot_protocol_read_u64_le
+                0x08006b10       0x16 build/boot_protocol.o
+                0x08006b10                boot_protocol_read_u64_le
+ .text.boot_protocol_write_u16_le
+                0x08006b26        0x8 build/boot_protocol.o
+                0x08006b26                boot_protocol_write_u16_le
+ .text.boot_protocol_write_u24_le
+                0x08006b2e        0xc build/boot_protocol.o
+                0x08006b2e                boot_protocol_write_u24_le
+ .text.boot_protocol_write_u32_le
+                0x08006b3a        0xe build/boot_protocol.o
+                0x08006b3a                boot_protocol_write_u32_le
+ .text.boot_protocol_write_u64_le
+                0x08006b48       0x16 build/boot_protocol.o
+                0x08006b48                boot_protocol_write_u64_le
+ .text.boot_protocol_decode_request
+                0x08006b5e       0x84 build/boot_protocol.o
+                0x08006b5e                boot_protocol_decode_request
+ .text.boot_protocol_make_response
+                0x08006be2       0x54 build/boot_protocol.o
+                0x08006be2                boot_protocol_make_response
+ *fill*         0x08006c36        0x2 
+ .text.Reset_Handler
+                0x08006c38       0x48 build/startup_stm32f103c8tx.o
+                0x08006c38                Reset_Handler
+ .text.Default_Handler
+                0x08006c80        0x2 build/startup_stm32f103c8tx.o
+                0x08006c80                USBWakeUp_IRQHandler
+                0x08006c80                EXTI2_IRQHandler
+                0x08006c80                DebugMon_Handler
+                0x08006c80                TIM1_CC_IRQHandler
+                0x08006c80                HardFault_Handler
+                0x08006c80                PVD_IRQHandler
+                0x08006c80                PendSV_Handler
+                0x08006c80                NMI_Handler
+                0x08006c80                EXTI3_IRQHandler
+                0x08006c80                EXTI0_IRQHandler
+                0x08006c80                I2C2_EV_IRQHandler
+                0x08006c80                UsageFault_Handler
+                0x08006c80                ADC1_2_IRQHandler
+                0x08006c80                SPI1_IRQHandler
+                0x08006c80                TAMPER_IRQHandler
+                0x08006c80                DMA1_Channel4_IRQHandler
+                0x08006c80                USART3_IRQHandler
+                0x08006c80                RTC_IRQHandler
+                0x08006c80                DMA1_Channel7_IRQHandler
+                0x08006c80                CAN1_RX1_IRQHandler
+                0x08006c80                TIM4_IRQHandler
+                0x08006c80                I2C1_EV_IRQHandler
+                0x08006c80                DMA1_Channel6_IRQHandler
+                0x08006c80                TIM3_IRQHandler
+                0x08006c80                RCC_IRQHandler
+                0x08006c80                TIM1_TRG_COM_IRQHandler
+                0x08006c80                DMA1_Channel1_IRQHandler
+                0x08006c80                Default_Handler
+                0x08006c80                EXTI15_10_IRQHandler
+                0x08006c80                EXTI9_5_IRQHandler
+                0x08006c80                SPI2_IRQHandler
+                0x08006c80                MemManage_Handler
+                0x08006c80                SVC_Handler
+                0x08006c80                DMA1_Channel5_IRQHandler
+                0x08006c80                EXTI4_IRQHandler
+                0x08006c80                USB_LP_CAN1_RX0_IRQHandler
+                0x08006c80                USB_HP_CAN1_TX_IRQHandler
+                0x08006c80                DMA1_Channel3_IRQHandler
+                0x08006c80                TIM1_UP_IRQHandler
+                0x08006c80                WWDG_IRQHandler
+                0x08006c80                TIM2_IRQHandler
+                0x08006c80                TIM1_BRK_IRQHandler
+                0x08006c80                EXTI1_IRQHandler
+                0x08006c80                USART2_IRQHandler
+                0x08006c80                I2C2_ER_IRQHandler
+                0x08006c80                DMA1_Channel2_IRQHandler
+                0x08006c80                CAN1_SCE_IRQHandler
+                0x08006c80                FLASH_IRQHandler
+                0x08006c80                BusFault_Handler
+                0x08006c80                USART1_IRQHandler
+                0x08006c80                I2C1_ER_IRQHandler
+                0x08006c80                RTC_Alarm_IRQHandler
+ *(.glue_7)
+ .glue_7        0x08006c82        0x0 linker stubs
+ *(.glue_7t)
+ .glue_7t       0x08006c82        0x0 linker stubs
+                0x08006c84                        . = ALIGN (0x4)
+ *fill*         0x08006c82        0x2 
+                0x08006c84                        _etext = .
+
+.vfp11_veneer   0x08006c84        0x0
+ .vfp11_veneer  0x08006c84        0x0 linker stubs
+
+.v4_bx          0x08006c84        0x0
+ .v4_bx         0x08006c84        0x0 linker stubs
+
+.iplt           0x08006c84        0x0
+ .iplt          0x08006c84        0x0 build/main.o
+
+.rodata         0x08006c84        0x8
+                0x08006c84                        . = ALIGN (0x4)
+ *(.rodata)
+ .rodata        0x08006c84        0x8 build/boot_j1939_tp.o
+ *(.rodata*)
+                0x08006c8c                        . = ALIGN (0x4)
+
+.ARM.extab      0x08006c8c        0x0
+                0x08006c8c                        . = ALIGN (0x4)
+ *(.ARM.extab* .gnu.linkonce.armextab.*)
+                0x08006c8c                        . = ALIGN (0x4)
+
+.ARM.exidx      0x08006c8c        0x8
+                0x08006c8c                        . = ALIGN (0x4)
+                0x08006c8c                        __exidx_start = .
+ *(.ARM.exidx*)
+ .ARM.exidx     0x08006c8c        0x8 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+                0x08006c94                        __exidx_end = .
+                0x08006c94                        . = ALIGN (0x4)
+
+.rel.dyn        0x08006c94        0x0
+ .rel.iplt      0x08006c94        0x0 build/main.o
+
+.preinit_array  0x08006c94        0x0
+                0x08006c94                        . = ALIGN (0x4)
+                [!provide]                        PROVIDE (__preinit_array_start = .)
+ *(.preinit_array*)
+                [!provide]                        PROVIDE (__preinit_array_end = .)
+                0x08006c94                        . = ALIGN (0x4)
+
+.init_array     0x08006c94        0x0
+                0x08006c94                        . = ALIGN (0x4)
+                [!provide]                        PROVIDE (__init_array_start = .)
+ *(SORT_BY_NAME(.init_array.*))
+ *(.init_array*)
+                [!provide]                        PROVIDE (__init_array_end = .)
+                0x08006c94                        . = ALIGN (0x4)
+
+.fini_array     0x08006c94        0x0
+                0x08006c94                        . = ALIGN (0x4)
+                [!provide]                        PROVIDE (__fini_array_start = .)
+ *(SORT_BY_NAME(.fini_array.*))
+ *(.fini_array*)
+                [!provide]                        PROVIDE (__fini_array_end = .)
+                0x08006c94                        . = ALIGN (0x4)
+                0x08006c94                        _sidata = LOADADDR (.data)
+
+.data           0x20000000        0x4 load address 0x08006c94
+                0x20000000                        . = ALIGN (0x4)
+                0x20000000                        _sdata = .
+ *(.data)
+ *(.data*)
+ .data.SystemCoreClock
+                0x20000000        0x4 build/system_stm32f1xx.o
+                0x20000000                SystemCoreClock
+                0x20000004                        . = ALIGN (0x4)
+                0x20000004                        _edata = .
+
+.igot.plt       0x20000004        0x0 load address 0x08006c98
+ .igot.plt      0x20000004        0x0 build/main.o
+
+.bss            0x20000008      0x10c load address 0x08006c98
+                0x20000008                        . = ALIGN (0x4)
+                0x20000008                        _sbss = .
+                0x20000008                        __bss_start__ = .
+ *(.bss)
+ *(.bss*)
+ .bss.boot_reset_force_deadline
+                0x20000008        0x4 build/main.o
+ .bss.boot_reset_deadline
+                0x2000000c        0x4 build/main.o
+ .bss.boot_reset_pending
+                0x20000010        0x1 build/main.o
+ .bss.tx_count  0x20000011        0x1 build/main.o
+ .bss.tx_head   0x20000012        0x1 build/main.o
+ .bss.commanded_address_buffer
+                0x20000013        0x9 build/main.o
+ .bss.tx_queue  0x2000001c       0x80 build/main.o
+ .bss.tp_receiver
+                0x2000009c       0x38 build/main.o
+ *fill*         0x200000d4        0x4 
+ .bss.address_claim
+                0x200000d8       0x28 build/main.o
+ .bss.device_config
+                0x20000100       0x10 build/main.o
+ .bss.system_tick_ms
+                0x20000110        0x4 build/main.o
+ *(COMMON)
+                0x20000114                        . = ALIGN (0x4)
+                0x20000114                        _ebss = .
+                0x20000114                        __bss_end__ = .
+
+.stack_reservation
+                0x20000114      0x404 load address 0x08006c98
+                0x20000118                        . = ALIGN (0x8)
+ *fill*         0x20000114        0x4 
+                0x20000118                        _end = .
+                0x20000118                        end = .
+                0x20000518                        . = (. + _Min_Stack_Size)
+ *fill*         0x20000118      0x400 
+                0x20000518                        . = ALIGN (0x8)
+                0x20000518                        _stack_reservation_end = .
+
+/DISCARD/
+ *(.comment)
+ *(.note*)
+
+.ARM.attributes
+                0x00000000       0x2b
+ *(.ARM.attributes)
+ .ARM.attributes
+                0x00000000       0x2d build/main.o
+ .ARM.attributes
+                0x0000002d       0x2d build/system_stm32f1xx.o
+ .ARM.attributes
+                0x0000005a       0x2d build/boot_device_config.o
+ .ARM.attributes
+                0x00000087       0x2d build/boot_metadata.o
+ .ARM.attributes
+                0x000000b4       0x2d build/boot_crc32.o
+ .ARM.attributes
+                0x000000e1       0x2d build/boot_j1939.o
+ .ARM.attributes
+                0x0000010e       0x2d build/boot_j1939_address_claim.o
+ .ARM.attributes
+                0x0000013b       0x2d build/boot_j1939_tp.o
+ .ARM.attributes
+                0x00000168       0x2d build/boot_protocol.o
+ .ARM.attributes
+                0x00000195       0x21 build/startup_stm32f103c8tx.o
+ .ARM.attributes
+                0x000001b6       0x1d /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+ .ARM.attributes
+                0x000001d3       0x2d /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+ .ARM.attributes
+                0x00000200       0x1d /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+                0x00000001                        ASSERT ((ADDR (.isr_vector) == 0x8005000), application vector table is not at 0x08005000)
+                0x00000001                        ASSERT (((ORIGIN (FLASH) + LENGTH (FLASH)) == 0x800fc00), application FLASH region overlaps the metadata page)
+                0x00000001                        ASSERT ((_stack_reservation_end <= (ORIGIN (RAM) + LENGTH (RAM))), application RAM plus reserved stack exceeds 20 KiB)
+OUTPUT(build/canloader_test_app.elf elf32-littlearm)
+LOAD linker stubs
+
+.debug_info     0x00000000     0x6c9d
+ .debug_info    0x00000000     0x2588 build/main.o
+ .debug_info    0x00002588      0x3c8 build/system_stm32f1xx.o
+ .debug_info    0x00002950      0xb68 build/boot_device_config.o
+ .debug_info    0x000034b8      0x8bb build/boot_metadata.o
+ .debug_info    0x00003d73      0x21c build/boot_crc32.o
+ .debug_info    0x00003f8f      0x4bb build/boot_j1939.o
+ .debug_info    0x0000444a      0xa99 build/boot_j1939_address_claim.o
+ .debug_info    0x00004ee3     0x130b build/boot_j1939_tp.o
+ .debug_info    0x000061ee      0xaaf build/boot_protocol.o
+
+.debug_abbrev   0x00000000     0x17d8
+ .debug_abbrev  0x00000000      0x54a build/main.o
+ .debug_abbrev  0x0000054a      0x124 build/system_stm32f1xx.o
+ .debug_abbrev  0x0000066e      0x33f build/boot_device_config.o
+ .debug_abbrev  0x000009ad      0x22a build/boot_metadata.o
+ .debug_abbrev  0x00000bd7      0x12e build/boot_crc32.o
+ .debug_abbrev  0x00000d05      0x220 build/boot_j1939.o
+ .debug_abbrev  0x00000f25      0x306 build/boot_j1939_address_claim.o
+ .debug_abbrev  0x0000122b      0x398 build/boot_j1939_tp.o
+ .debug_abbrev  0x000015c3      0x215 build/boot_protocol.o
+
+.debug_loclists
+                0x00000000     0x2adb
+ .debug_loclists
+                0x00000000      0xc9d build/main.o
+ .debug_loclists
+                0x00000c9d      0x3ae build/boot_device_config.o
+ .debug_loclists
+                0x0000104b      0x236 build/boot_metadata.o
+ .debug_loclists
+                0x00001281      0x138 build/boot_crc32.o
+ .debug_loclists
+                0x000013b9      0x400 build/boot_j1939.o
+ .debug_loclists
+                0x000017b9      0x53a build/boot_j1939_address_claim.o
+ .debug_loclists
+                0x00001cf3      0x96e build/boot_j1939_tp.o
+ .debug_loclists
+                0x00002661      0x47a build/boot_protocol.o
+
+.debug_aranges  0x00000000      0x330
+ .debug_aranges
+                0x00000000       0x98 build/main.o
+ .debug_aranges
+                0x00000098       0x30 build/system_stm32f1xx.o
+ .debug_aranges
+                0x000000c8       0x48 build/boot_device_config.o
+ .debug_aranges
+                0x00000110       0x48 build/boot_metadata.o
+ .debug_aranges
+                0x00000158       0x30 build/boot_crc32.o
+ .debug_aranges
+                0x00000188       0x38 build/boot_j1939.o
+ .debug_aranges
+                0x000001c0       0x78 build/boot_j1939_address_claim.o
+ .debug_aranges
+                0x00000238       0x78 build/boot_j1939_tp.o
+ .debug_aranges
+                0x000002b0       0x80 build/boot_protocol.o
+
+.debug_rnglists
+                0x00000000      0x4b1
+ .debug_rnglists
+                0x00000000      0x1b5 build/main.o
+ .debug_rnglists
+                0x000001b5       0x1f build/system_stm32f1xx.o
+ .debug_rnglists
+                0x000001d4       0x82 build/boot_device_config.o
+ .debug_rnglists
+                0x00000256       0x4e build/boot_metadata.o
+ .debug_rnglists
+                0x000002a4       0x3a build/boot_crc32.o
+ .debug_rnglists
+                0x000002de       0x31 build/boot_j1939.o
+ .debug_rnglists
+                0x0000030f       0x98 build/boot_j1939_address_claim.o
+ .debug_rnglists
+                0x000003a7       0x8f build/boot_j1939_tp.o
+ .debug_rnglists
+                0x00000436       0x7b build/boot_protocol.o
+
+.debug_macro    0x00000000    0x107c8
+ .debug_macro   0x00000000      0x15d build/main.o
+ .debug_macro   0x0000015d      0xacc build/main.o
+ .debug_macro   0x00000c29       0x22 build/main.o
+ .debug_macro   0x00000c4b      0x190 build/main.o
+ .debug_macro   0x00000ddb      0x34e build/main.o
+ .debug_macro   0x00001129       0x16 build/main.o
+ .debug_macro   0x0000113f      0x130 build/main.o
+ .debug_macro   0x0000126f       0x70 build/main.o
+ .debug_macro   0x000012df       0x46 build/main.o
+ .debug_macro   0x00001325       0x40 build/main.o
+ .debug_macro   0x00001365       0x2e build/main.o
+ .debug_macro   0x00001393       0x2e build/main.o
+ .debug_macro   0x000013c1       0x22 build/main.o
+ .debug_macro   0x000013e3       0x1c build/main.o
+ .debug_macro   0x000013ff       0x22 build/main.o
+ .debug_macro   0x00001421       0xbd build/main.o
+ .debug_macro   0x000014de      0xd23 build/main.o
+ .debug_macro   0x00002201     0xe09e build/main.o
+ .debug_macro   0x0001029f       0x6d build/main.o
+ .debug_macro   0x0001030c       0x89 build/system_stm32f1xx.o
+ .debug_macro   0x00010395       0xab build/boot_device_config.o
+ .debug_macro   0x00010440       0x40 build/boot_device_config.o
+ .debug_macro   0x00010480       0xd7 build/boot_metadata.o
+ .debug_macro   0x00010557       0x28 build/boot_metadata.o
+ .debug_macro   0x0001057f       0x3d build/boot_crc32.o
+ .debug_macro   0x000105bc       0x75 build/boot_j1939.o
+ .debug_macro   0x00010631       0x70 build/boot_j1939_address_claim.o
+ .debug_macro   0x000106a1       0x69 build/boot_j1939_tp.o
+ .debug_macro   0x0001070a       0x3a build/boot_j1939_tp.o
+ .debug_macro   0x00010744       0x84 build/boot_protocol.o
+
+.debug_line     0x00000000     0x3f22
+ .debug_line    0x00000000     0x1289 build/main.o
+ .debug_line    0x00001289      0x2e1 build/system_stm32f1xx.o
+ .debug_line    0x0000156a      0x67a build/boot_device_config.o
+ .debug_line    0x00001be4      0x5aa build/boot_metadata.o
+ .debug_line    0x0000218e      0x206 build/boot_crc32.o
+ .debug_line    0x00002394      0x3b3 build/boot_j1939.o
+ .debug_line    0x00002747      0x745 build/boot_j1939_address_claim.o
+ .debug_line    0x00002e8c      0xa47 build/boot_j1939_tp.o
+ .debug_line    0x000038d3      0x64f build/boot_protocol.o
+
+.debug_str      0x00000000    0x57601
+ .debug_str     0x00000000    0x57601 build/main.o
+                              0x56b76 (size before relaxing)
+ .debug_str     0x00057601    0x5436e build/system_stm32f1xx.o
+ .debug_str     0x00057601     0x5005 build/boot_device_config.o
+ .debug_str     0x00057601     0x4d72 build/boot_metadata.o
+ .debug_str     0x00057601     0x3cf7 build/boot_crc32.o
+ .debug_str     0x00057601     0x4901 build/boot_j1939.o
+ .debug_str     0x00057601     0x4dda build/boot_j1939_address_claim.o
+ .debug_str     0x00057601     0x4f9e build/boot_j1939_tp.o
+ .debug_str     0x00057601     0x50b0 build/boot_protocol.o
+
+.debug_frame    0x00000000      0x894
+ .debug_frame   0x00000000      0x194 build/main.o
+ .debug_frame   0x00000194       0x40 build/system_stm32f1xx.o
+ .debug_frame   0x000001d4       0xec build/boot_device_config.o
+ .debug_frame   0x000002c0       0xc0 build/boot_metadata.o
+ .debug_frame   0x00000380       0x54 build/boot_crc32.o
+ .debug_frame   0x000003d4       0x7c build/boot_j1939.o
+ .debug_frame   0x00000450      0x12c build/boot_j1939_address_claim.o
+ .debug_frame   0x0000057c      0x140 build/boot_j1939_tp.o
+ .debug_frame   0x000006bc      0x178 build/boot_protocol.o
+ .debug_frame   0x00000834       0x2c /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+ .debug_frame   0x00000860       0x34 /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+
+Cross Reference Table
+
+Symbol                                            File
+ADC1_2_IRQHandler                                 build/startup_stm32f103c8tx.o
+AHBPrescTable                                     build/system_stm32f1xx.o
+APBPrescTable                                     build/system_stm32f1xx.o
+BusFault_Handler                                  build/startup_stm32f103c8tx.o
+CAN1_RX1_IRQHandler                               build/startup_stm32f103c8tx.o
+CAN1_SCE_IRQHandler                               build/startup_stm32f103c8tx.o
+DMA1_Channel1_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel2_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel3_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel4_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel5_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel6_IRQHandler                          build/startup_stm32f103c8tx.o
+DMA1_Channel7_IRQHandler                          build/startup_stm32f103c8tx.o
+DebugMon_Handler                                  build/startup_stm32f103c8tx.o
+Default_Handler                                   build/startup_stm32f103c8tx.o
+EXTI0_IRQHandler                                  build/startup_stm32f103c8tx.o
+EXTI15_10_IRQHandler                              build/startup_stm32f103c8tx.o
+EXTI1_IRQHandler                                  build/startup_stm32f103c8tx.o
+EXTI2_IRQHandler                                  build/startup_stm32f103c8tx.o
+EXTI3_IRQHandler                                  build/startup_stm32f103c8tx.o
+EXTI4_IRQHandler                                  build/startup_stm32f103c8tx.o
+EXTI9_5_IRQHandler                                build/startup_stm32f103c8tx.o
+FLASH_IRQHandler                                  build/startup_stm32f103c8tx.o
+HardFault_Handler                                 build/startup_stm32f103c8tx.o
+I2C1_ER_IRQHandler                                build/startup_stm32f103c8tx.o
+I2C1_EV_IRQHandler                                build/startup_stm32f103c8tx.o
+I2C2_ER_IRQHandler                                build/startup_stm32f103c8tx.o
+I2C2_EV_IRQHandler                                build/startup_stm32f103c8tx.o
+MemManage_Handler                                 build/startup_stm32f103c8tx.o
+NMI_Handler                                       build/startup_stm32f103c8tx.o
+PVD_IRQHandler                                    build/startup_stm32f103c8tx.o
+PendSV_Handler                                    build/startup_stm32f103c8tx.o
+RCC_IRQHandler                                    build/startup_stm32f103c8tx.o
+RTC_Alarm_IRQHandler                              build/startup_stm32f103c8tx.o
+RTC_IRQHandler                                    build/startup_stm32f103c8tx.o
+Reset_Handler                                     build/startup_stm32f103c8tx.o
+SPI1_IRQHandler                                   build/startup_stm32f103c8tx.o
+SPI2_IRQHandler                                   build/startup_stm32f103c8tx.o
+SVC_Handler                                       build/startup_stm32f103c8tx.o
+SysTick_Handler                                   build/main.o
+SystemCoreClock                                   build/system_stm32f1xx.o
+                                                  build/main.o
+SystemCoreClockUpdate                             build/system_stm32f1xx.o
+SystemInit                                        build/system_stm32f1xx.o
+                                                  build/startup_stm32f103c8tx.o
+TAMPER_IRQHandler                                 build/startup_stm32f103c8tx.o
+TIM1_BRK_IRQHandler                               build/startup_stm32f103c8tx.o
+TIM1_CC_IRQHandler                                build/startup_stm32f103c8tx.o
+TIM1_TRG_COM_IRQHandler                           build/startup_stm32f103c8tx.o
+TIM1_UP_IRQHandler                                build/startup_stm32f103c8tx.o
+TIM2_IRQHandler                                   build/startup_stm32f103c8tx.o
+TIM3_IRQHandler                                   build/startup_stm32f103c8tx.o
+TIM4_IRQHandler                                   build/startup_stm32f103c8tx.o
+USART1_IRQHandler                                 build/startup_stm32f103c8tx.o
+USART2_IRQHandler                                 build/startup_stm32f103c8tx.o
+USART3_IRQHandler                                 build/startup_stm32f103c8tx.o
+USBWakeUp_IRQHandler                              build/startup_stm32f103c8tx.o
+USB_HP_CAN1_TX_IRQHandler                         build/startup_stm32f103c8tx.o
+USB_LP_CAN1_RX0_IRQHandler                        build/startup_stm32f103c8tx.o
+UsageFault_Handler                                build/startup_stm32f103c8tx.o
+WWDG_IRQHandler                                   build/startup_stm32f103c8tx.o
+__aeabi_idiv0                                     /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+__aeabi_ldiv0                                     /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_dvmd_tls.o)
+                                                  /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+__aeabi_uldivmod                                  /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+                                                  build/boot_j1939_address_claim.o
+__libc_init_array                                 build/system_stm32f1xx.o
+                                                  build/startup_stm32f103c8tx.o
+__udivmoddi4                                      /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_udivmoddi4.o)
+                                                  /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.macosaarch64_1.0.0.202602081740/tools/bin/../lib/gcc/arm-none-eabi/14.3.1/thumb/v7-m/nofp/libgcc.a(_aeabi_uldivmod.o)
+_ebss                                             build/startup_stm32f103c8tx.o
+_edata                                            build/startup_stm32f103c8tx.o
+_estack                                           build/startup_stm32f103c8tx.o
+_sbss                                             build/startup_stm32f103c8tx.o
+_sdata                                            build/startup_stm32f103c8tx.o
+_sidata                                           build/startup_stm32f103c8tx.o
+boot_crc32_compute                                build/boot_crc32.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_crc32_finalize                               build/boot_crc32.o
+boot_crc32_update                                 build/boot_crc32.o
+boot_device_config_defaults                       build/boot_device_config.o
+boot_device_config_load                           build/boot_device_config.o
+                                                  build/main.o
+boot_device_config_read                           build/boot_device_config.o
+boot_device_config_store                          build/boot_device_config.o
+boot_device_config_store_preferred_address        build/boot_device_config.o
+                                                  build/main.o
+boot_flash_erase                                  build/main.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_flash_init                                   build/main.o
+boot_flash_is_valid_range                         build/main.o
+boot_flash_read                                   build/main.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_flash_write                                  build/main.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_j1939_address_claim_handle                   build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_init                     build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_is_operational           build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_restart                  build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_source_address           build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_start                    build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_state                    build/boot_j1939_address_claim.o
+boot_j1939_address_claim_take_address_changed     build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_take_tx                  build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_address_claim_task                     build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_decode_frame                           build/boot_j1939.o
+                                                  build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_j1939_address_claim.o
+                                                  build/main.o
+boot_j1939_decode_id                              build/boot_j1939.o
+boot_j1939_make_frame                             build/boot_j1939.o
+                                                  build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_j1939_address_claim.o
+boot_j1939_make_id                                build/boot_j1939.o
+boot_j1939_tp_rx_allow_bam                        build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_cancel                           build/boot_j1939_tp.o
+boot_j1939_tp_rx_data                             build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_expect_rts                       build/boot_j1939_tp.o
+boot_j1939_tp_rx_handle                           build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_init                             build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_pgn                              build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_size                             build/boot_j1939_tp.o
+                                                  build/main.o
+boot_j1939_tp_rx_source                           build/boot_j1939_tp.o
+boot_j1939_tp_rx_task                             build/boot_j1939_tp.o
+                                                  build/main.o
+boot_metadata_begin                               build/boot_metadata.o
+boot_metadata_mark_invalid                        build/boot_metadata.o
+boot_metadata_mark_valid                          build/boot_metadata.o
+boot_metadata_read                                build/boot_metadata.o
+                                                  build/main.o
+boot_platform_uid_word                            build/main.o
+                                                  build/boot_device_config.o
+boot_protocol_decode_dm14                         build/boot_protocol.o
+boot_protocol_decode_dm16                         build/boot_protocol.o
+boot_protocol_decode_request                      build/boot_protocol.o
+                                                  build/main.o
+boot_protocol_make_dm15                           build/boot_protocol.o
+boot_protocol_make_response                       build/boot_protocol.o
+                                                  build/main.o
+boot_protocol_read_u16_le                         build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_protocol_read_u24_le                         build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_j1939_address_claim.o
+boot_protocol_read_u32_le                         build/boot_protocol.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_protocol_read_u64_le                         build/boot_protocol.o
+                                                  build/boot_j1939_address_claim.o
+                                                  build/boot_device_config.o
+                                                  build/main.o
+boot_protocol_write_u16_le                        build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_protocol_write_u24_le                        build/boot_protocol.o
+                                                  build/boot_j1939_tp.o
+boot_protocol_write_u32_le                        build/boot_protocol.o
+                                                  build/boot_metadata.o
+                                                  build/boot_device_config.o
+boot_protocol_write_u64_le                        build/boot_protocol.o
+                                                  build/boot_j1939_address_claim.o
+                                                  build/boot_device_config.o
+g_pfnVectors                                      build/startup_stm32f103c8tx.o
+main                                              build/main.o
+                                                  build/startup_stm32f103c8tx.o
+memset                                            build/main.o
+                                                  build/boot_j1939_tp.o
+                                                  build/boot_j1939_address_claim.o

@@ -1,0 +1,21 @@
+started_at=2026-08-25T07:31:57.968728-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=["/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.macosaarch64_1.0.100.202603051304/tools/bin/STM32_Programmer_CLI", "-c", "port=SWD", "sn=0C3904049318303030303032", "mode=HOTPLUG"]
+
+[36m[01m      -------------------------------------------------------------------
+[39;49m[0m[36m[01m                        STM32CubeProgrammer v2.23.0                  
+[39;49m[0m[36m[01m      -------------------------------------------------------------------
+
+[39;49m[0m[90mST-LINK SN  : 0C3904049318303030303032
+[39;49m[0m[90mST-LINK FW  : V2J48S7
+[39;49m[0m[90mBoard       : --
+[39;49m[0m[90mVoltage     : 3.17V
+[39;49m[0mlibusb: warning [darwin_transfer_status] transfer error: timed out
+libusb: warning [darwin_transfer_status] transfer error: timed out
+libusb: warning [darwin_transfer_status] transfer error: timed out
+Error: Unable to get core ID
+[39;49m[0m[00;31mError: No STM32 target found! If your product embeds Debug Authentication, please perform a discovery using Debug Authentication
+[39;49m[0m[39;49m[0m
+ended_at=2026-08-25T07:32:13.427218-03:00
+duration_seconds=15.458576
+exit_code=1

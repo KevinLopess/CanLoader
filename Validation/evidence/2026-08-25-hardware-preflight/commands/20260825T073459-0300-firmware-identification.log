@@ -1,0 +1,12 @@
+started_at=2026-08-25T07:34:59.860892-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=[".venv/bin/python", "-c", "from pathlib import Path; import hashlib,zlib; p=Path('TestApplication/build/canloader_test_app.bin'); d=p.read_bytes(); print(f'path={p}'); print(f'bytes={len(d)}'); print(f'sha256={hashlib.sha256(d).hexdigest()}'); print(f'crc32_iso_hdlc=0x{zlib.crc32(d)&0xffffffff:08X}')"]
+
+path=TestApplication/build/canloader_test_app.bin
+bytes=7320
+sha256=f44aaab027cc34e6cd5fa69c9f22ce90ba1931900cb969ce72b7c7cda6c64ee0
+crc32_iso_hdlc=0x7BB303AE
+
+ended_at=2026-08-25T07:34:59.902883-03:00
+duration_seconds=0.041989
+exit_code=0

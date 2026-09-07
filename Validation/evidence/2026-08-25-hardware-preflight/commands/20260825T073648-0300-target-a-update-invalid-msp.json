@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "test": "target-a-update-invalid-msp",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "update",
+    "Validation/evidence/2026-08-25-hardware-preflight/images/invalid-msp.raw",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--address",
+    "0x80",
+    "--name",
+    "0x80000000000E30EA",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T07:36:48.541893-03:00",
+  "ended_at": "2026-08-25T07:36:53.291796-03:00",
+  "duration_seconds": 4.749911,
+  "exit_code": 2,
+  "interrupted": false,
+  "log": "commands/20260825T073648-0300-target-a-update-invalid-msp.log"
+}

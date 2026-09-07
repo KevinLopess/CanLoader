@@ -1,0 +1,18 @@
+$ make test PYTHON=<selected interpreter>
+/Applications/Xcode.app/Contents/Developer/usr/bin/make -C Tests/c check
+build/test_protocol
+test_protocol: OK
+build/test_j1939_address_claim
+test_j1939_address_claim: OK
+build/test_j1939_tp
+test_j1939_tp: OK
+build/test_device_config_v2
+test_device_config_v2: OK
+build/test_bootloader
+bootloader v2 tests: OK
+build/test_metadata_image
+test_metadata_image: OK
+PYTHONPATH=Tools/canloader /Users/kevinlopes/Projects/TCC/CanLoader/.venv/bin/python -m pytest -q Tests/python
+........................................................................ [ 93%]
+.....                                                                    [100%]
+77 passed in 1.12s

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "test": "can-scan",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "ls",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--scan-timeout",
+    "0.5",
+    "--identify-timeout",
+    "0.5",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T07:32:20.398968-03:00",
+  "ended_at": "2026-08-25T07:32:23.395545-03:00",
+  "duration_seconds": 2.996618,
+  "exit_code": 0,
+  "interrupted": false,
+  "log": "commands/20260825T073220-0300-can-scan.log"
+}

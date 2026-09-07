@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "test": "target-a-info-after-update",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "info",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--address",
+    "0x80",
+    "--name",
+    "0x80000000000E30EA",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-08-25T07:34:01.997574-03:00",
+  "ended_at": "2026-08-25T07:34:04.661592-03:00",
+  "duration_seconds": 2.664042,
+  "exit_code": 0,
+  "interrupted": false,
+  "log": "commands/20260825T073401-0300-target-a-info-after-update.log"
+}

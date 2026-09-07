@@ -1,0 +1,75 @@
+started_at=2026-08-25T07:31:28.623358-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=["/Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.macosaarch64_1.0.100.202603051304/tools/bin/STM32_Programmer_CLI", "-l"]
+
+[36m[01m      -------------------------------------------------------------------
+[39;49m[0m[36m[01m                        STM32CubeProgrammer v2.23.0                  
+[39;49m[0m[36m[01m      -------------------------------------------------------------------
+
+[39;49m[0m[00;32m=====  DFU Interface   =====
+[39;49m[0m[39;49m
+[39;49m[0m[90mNo STM32 device in DFU mode connected
+[39;49m[0m[39;49m
+[39;49m[0m[00;32m===== J-Link Interface =====
+[39;49m[0m[90mNo J-Link/flasher probe detected.
+[39;49m[0m[00;32m===== STLink Interface =====
+[39;49m[0mlibusb: warning [darwin_transfer_status] transfer error: timed out
+[39;49m
+-------- Connected ST-LINK Probes List --------
+[39;49m[0m[39;49m
+ST-Link Probe 0 :
+[39;49m[0m[90m   ST-LINK SN  : 0C3904049318303030303032
+[39;49m[0m[90m   ST-LINK FW  : V2J48S7
+[39;49m[0m[90m   Access Port Number  : 0
+[39;49m[0m[90m   Board Name  : 
+[39;49m[0m[39;49m-----------------------------------------------
+
+[39;49m[0m[00;32m=====  UART Interface  =====
+[39;49m[0m[39;49m
+Total number of serial ports available: 8
+
+[39;49m[0mlibusb: warning [darwin_transfer_status] transfer error: timed out
+[39;49mPort: cu.debug-console
+[39;49m[0m[39;49mLocation: /dev/cu.debug-console
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: tty.debug-console
+[39;49m[0m[39;49mLocation: /dev/tty.debug-console
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: cu.Bluetooth-Incoming-Port
+[39;49m[0m[39;49mLocation: /dev/cu.Bluetooth-Incoming-Port
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: tty.Bluetooth-Incoming-Port
+[39;49m[0m[39;49mLocation: /dev/tty.Bluetooth-Incoming-Port
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: cu.QCYH3Pro
+[39;49m[0m[39;49mLocation: /dev/cu.QCYH3Pro
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: tty.QCYH3Pro
+[39;49m[0m[39;49mLocation: /dev/tty.QCYH3Pro
+[39;49m[0m[39;49mDescription: N/A
+[39;49m[0m[39;49mManufacturer: N/A
+
+[39;49m[0m[39;49mPort: cu.usbmodem2074318558421
+[39;49m[0m[39;49mLocation: /dev/cu.usbmodem2074318558421
+[39;49m[0m[39;49mDescription: USB ACM
+[39;49m[0m[39;49mManufacturer: Openlight Labs
+
+[39;49m[0m[39;49mPort: tty.usbmodem2074318558421
+[39;49m[0m[39;49mLocation: /dev/tty.usbmodem2074318558421
+[39;49m[0m[39;49mDescription: USB ACM
+[39;49m[0m[39;49mManufacturer: Openlight Labs
+
+[39;49m[0m
+ended_at=2026-08-25T07:31:39.021068-03:00
+duration_seconds=10.397774
+exit_code=0

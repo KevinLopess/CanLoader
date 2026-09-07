@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "source_log": "Validation/evidence/2026-08-25-hardware-preflight/commands/20260825T073711-0300-target-a-recover-valid.log",
+  "parsed_frames": 1938,
+  "frames_by_direction": {
+    "RX": 381,
+    "TX": 1557
+  },
+  "frames_by_can_id": {
+    "RX:0x18D8F980": 150,
+    "RX:0x18ECF980": 221,
+    "RX:0x18EEFF80": 1,
+    "RX:0x18EEFF81": 1,
+    "RX:0x18EFF980": 8,
+    "TX:0x18D980F9": 375,
+    "TX:0x18EAFFF9": 1,
+    "TX:0x18EB80F9": 1098,
+    "TX:0x18EC80F9": 74,
+    "TX:0x18EEFFF9": 1,
+    "TX:0x18EF80F9": 8
+  },
+  "frames_by_pgn": {
+    "RX:0x0D800": 150,
+    "RX:0x0EC00": 221,
+    "RX:0x0EE00": 2,
+    "RX:0x0EF00": 8,
+    "TX:0x0D900": 375,
+    "TX:0x0EA00": 1,
+    "TX:0x0EB00": 1098,
+    "TX:0x0EC00": 74,
+    "TX:0x0EE00": 1,
+    "TX:0x0EF00": 8
+  },
+  "frames_by_source_address": {
+    "RX:0x80": 380,
+    "RX:0x81": 1,
+    "TX:0xF9": 1557
+  },
+  "frames_by_destination": {
+    "RX:0xF9": 379,
+    "RX:0xFF": 2,
+    "TX:0x80": 1555,
+    "TX:0xFF": 2
+  },
+  "last_transfer_progress": {
+    "bytes": 7320,
+    "total_bytes": 7320
+  },
+  "verified_result": {
+    "bytes": 7320,
+    "target_name": "0x80000000000E30EA",
+    "crc32": "0x7BB303AE"
+  },
+  "command_duration_seconds": 3.880518,
+  "command_exit_code": 0,
+  "limitations": [
+    "Frames are limited to those consumed by the CLI.",
+    "The verbose log has no per-frame timestamps.",
+    "Command duration includes discovery and control outside START_UPDATE-to-VERIFY."
+  ]
+}

@@ -1,0 +1,20 @@
+started_at=2026-08-25T07:33:24.005288-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=[".venv/bin/python", "-m", "canloader", "ls", "--interface", "slcan", "--channel", "/dev/cu.usbmodem2074318558421", "--bitrate", "500000", "--scan-timeout", "0.5", "--identify-timeout", "0.5", "--verbose"]
+
+DEBUG: can config: {'bitrate': 500000, 'interface': 'slcan', 'channel': '/dev/cu.usbmodem2074318558421'}
+DEBUG: TX 18EEFFF9 [8] 01 00 00 00 00 00 00 a0
+DEBUG: TX 18EAFFF9 [8] 00 ee 00 ff ff ff ff ff
+DEBUG: RX 18EEFF81 [8] af 19 17 00 00 00 00 80
+DEBUG: RX 18EEFF80 [8] ea 30 0e 00 00 00 00 80
+DEBUG: TX 18EF80F9 [8] 02 01 22 00 00 00 00 00
+DEBUG: RX 18EFF980 [8] 02 80 01 22 3d 80 02 f1
+DEBUG: TX 18EF81F9 [8] 02 01 23 00 00 00 00 00
+DEBUG: RX 18EFF981 [8] 02 80 01 23 3d 81 02 f1
+ADDR  NAME                MFG   FUNC  CANLOADER  MODE
+0x80  0x80000000000E30EA     0     0  yes        application
+0x81  0x80000000001719AF     0     0  yes        application
+
+ended_at=2026-08-25T07:33:26.890384-03:00
+duration_seconds=2.885091
+exit_code=0
