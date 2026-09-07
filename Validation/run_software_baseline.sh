@@ -63,7 +63,7 @@ validation_commit=$(git rev-parse HEAD)
     echo "Alterações rastreadas nos diretórios de implementação e testes:"
     git diff --name-status HEAD -- \
         Application Config Core Drivers Portable Protocol TestApplication Tests Tools \
-        STM32F103C8TX_FLASH.ld Makefile
+        Targets Makefile
     echo
     echo "Arquivos não rastreados nesses diretórios:"
     git ls-files --others --exclude-standard -- \
@@ -94,13 +94,13 @@ if [ -n "$validation_size_tool" ] && [ -x "$validation_size_tool" ]; then
     {
         "$validation_size_tool" --version | sed -n '1,2p'
         echo
-        "$validation_size_tool" build/bootloader/CanLoader.elf
-        "$validation_size_tool" TestApplication/build/canloader_test_app.elf
+        "$validation_size_tool" build/stm32f103c8/bootloader/CanLoader.elf
+        "$validation_size_tool" build/stm32f103c8/test-application/canloader_test_app.elf
     } > "$validation_session/size.txt"
     "$validation_tool_dir/arm-none-eabi-objdump" -h \
-        build/bootloader/CanLoader.elf > "$validation_session/bootloader-sections.txt"
+        build/stm32f103c8/bootloader/CanLoader.elf > "$validation_session/bootloader-sections.txt"
     "$validation_tool_dir/arm-none-eabi-objdump" -h \
-        TestApplication/build/canloader_test_app.elf \
+        build/stm32f103c8/test-application/canloader_test_app.elf \
         > "$validation_session/application-sections.txt"
     "$validation_tool_dir/arm-none-eabi-gcc" --version \
         > "$validation_session/toolchain.txt"
@@ -112,13 +112,13 @@ else
 fi
 
 mkdir -p "$validation_session/artifacts" "$validation_session/maps"
-cp build/bootloader/CanLoader.bin \
+cp build/stm32f103c8/bootloader/CanLoader.bin \
     "$validation_session/artifacts/bootloader.raw"
-cp TestApplication/build/canloader_test_app.bin \
+cp build/stm32f103c8/test-application/canloader_test_app.bin \
     "$validation_session/artifacts/reference-application.raw"
-cp build/bootloader/CanLoader.map \
+cp build/stm32f103c8/bootloader/CanLoader.map \
     "$validation_session/maps/bootloader.map.txt"
-cp TestApplication/build/canloader_test_app.map \
+cp build/stm32f103c8/test-application/canloader_test_app.map \
     "$validation_session/maps/test-application.map.txt"
 
 "$validation_python" - "$validation_session/artifacts.json" <<'PY'
@@ -131,9 +131,9 @@ import zlib
 from pathlib import Path
 
 artifacts = [
-    (Path("build/bootloader/CanLoader.bin"), "artifacts/bootloader.raw"),
+    (Path("build/stm32f103c8/bootloader/CanLoader.bin"), "artifacts/bootloader.raw"),
     (
-        Path("TestApplication/build/canloader_test_app.bin"),
+        Path("build/stm32f103c8/test-application/canloader_test_app.bin"),
         "artifacts/reference-application.raw",
     ),
 ]

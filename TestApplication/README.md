@@ -156,30 +156,32 @@ Ou diretamente neste diretório:
 
 ```sh
 make
+make TARGET=stm32g0b1re
 ```
 
-O build reutiliza o startup STM32F103 e os headers CMSIS do projeto. Os
-artefatos são:
+Um único `Makefile` inclui a configuração correspondente em `Targets/<target>/target.mk`.
+Todos os artefatos seguem o padrão `build/<target>/test-application/` na raiz
+do repositório:
 
 | Arquivo | Uso |
 |---|---|
-| `build/canloader_test_app.elf` | símbolos, seções e debug |
-| `build/canloader_test_app.map` | auditoria de memória e referências |
-| `build/canloader_test_app.bin` | entrada do comando `canloader update` |
-| `build/canloader_test_app.hex` | inspeção/programação controlada por endereço |
+| `build/<target>/test-application/canloader_test_app.elf` | símbolos, seções e debug |
+| `build/<target>/test-application/canloader_test_app.map` | auditoria de memória e referências |
+| `build/<target>/test-application/canloader_test_app.bin` | entrada do comando `canloader update` |
+| `build/<target>/test-application/canloader_test_app.hex` | inspeção/programação controlada por endereço |
 
 Confira o endereço da vector table e o tamanho antes do ensaio. A partir da
 raiz do repositório:
 
 ```sh
-arm-none-eabi-size TestApplication/build/canloader_test_app.elf
-arm-none-eabi-objdump -h TestApplication/build/canloader_test_app.elf
+arm-none-eabi-size build/stm32f103c8/test-application/canloader_test_app.elf
+arm-none-eabi-objdump -h build/stm32f103c8/test-application/canloader_test_app.elf
 ```
 
 O caminho de atualização esperado é:
 
 ```sh
-canloader update TestApplication/build/canloader_test_app.bin \
+canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   --interface socketcan --channel can0 \
   --address 0x80 --name 0x8000000000123456 --run --verbose
 ```
@@ -198,17 +200,17 @@ TX, ambos em AF3.
 Os artefatos ficam em:
 
 ```text
-build/stm32g0b1re/canloader_test_app.elf
-build/stm32g0b1re/canloader_test_app.bin
-build/stm32g0b1re/canloader_test_app.hex
-build/stm32g0b1re/canloader_test_app.map
+build/stm32g0b1re/test-application/canloader_test_app.elf
+build/stm32g0b1re/test-application/canloader_test_app.bin
+build/stm32g0b1re/test-application/canloader_test_app.hex
+build/stm32g0b1re/test-application/canloader_test_app.map
 ```
 
 O update correspondente é:
 
 ```sh
 canloader update \
-  TestApplication/build/stm32g0b1re/canloader_test_app.bin \
+  build/stm32g0b1re/test-application/canloader_test_app.bin \
   --interface socketcan --channel can0 \
   --address 0x80 --name 0x8000000000123456 --run --verbose
 ```

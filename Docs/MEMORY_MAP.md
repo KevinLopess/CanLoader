@@ -48,8 +48,8 @@ host e testes. Alterá-los exige rebuild coordenado de todos esses componentes.
 bootloader; ela é a soma de `BOOTLOADER_CODE_SIZE=0x4C00` e uma página de
 configuração. O protocolo nunca oferece essa área como memória gravável.
 
-`STM32F103C8TX_FLASH.ld` expõe 19 KiB como `FLASH` e reserva
-`DEVICE_CONFIG` em `0x08004C00`. `TestApplication/linker.ld` origina a
+`Targets/stm32f103c8/STM32F103C8TX_BOOT_FLASH.ld` expõe 19 KiB como `FLASH` e reserva
+`DEVICE_CONFIG` em `0x08004C00`. `TestApplication/Targets/stm32f103c8/linker.ld` origina a
 aplicação em `0x08005000`, limita-a a `0xAC00` e afirma que seu limite exclusivo
 é `0x0800FC00`.
 
@@ -85,7 +85,7 @@ o `.map` precisam ser arquivados novamente em cada build de liberação.
 | metadata | `0x0807F800` | `0x0807FFFF` | `0x08080000` | `0x800` = 2 KiB |
 
 `Targets/stm32g0b1re/STM32G0B1RETX_BOOT_FLASH.ld` limita o código a
-30 KiB. `TestApplication/linker_stm32g0b1re.ld` origina a aplicação em
+30 KiB. `TestApplication/Targets/stm32g0b1re/linker.ld` origina a aplicação em
 `0x08008000` e termina antes da última página. O port exige o mapeamento padrão
 dos bancos (`nSWAP_BANK=1`) e divide apagamentos que cruzem `0x08040000`.
 

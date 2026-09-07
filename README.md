@@ -108,7 +108,14 @@ Pré-requisitos principais:
 - STM32CubeProgrammer/ST-LINK para a instalação inicial;
 - `python-can` e `pyserial` para o host.
 
-Na raiz do repositório, o F103 permanece o target padrão:
+Na raiz do repositório, `make all` compila o bootloader e a aplicação de teste
+de todos os targets encontrados em `Targets/*/target.mk`:
+
+```sh
+make all
+```
+
+O F103 permanece o target padrão para os alvos individuais:
 
 ```sh
 make bootloader
@@ -122,20 +129,25 @@ Para a NUCLEO-G0B1RE:
 make TARGET=stm32g0b1re all
 ```
 
-Para compilar as duas variantes em sequência:
+`all-targets` permanece como alias explícito de `all`:
 
 ```sh
 make all-targets
 ```
 
+Para gravar e depurar pelo STM32CubeIDE, use as configurações
+`CanLoader STM32F103C8Tx.launch` e `CanLoader NUCLEO-G0B1RE.launch`. O passo a
+passo está em [Gravação e depuração pelo STM32CubeIDE](Docs/CUBEIDE_LAUNCH.md).
+
 Artefatos principais:
 
 | Alvo | Saída |
 |---|---|
-| `make bootloader` | `build/bootloader/CanLoader.{elf,bin,hex,map,list}` |
-| `make test-application` | `TestApplication/build/canloader_test_app.{elf,bin,hex,map}` |
-| `make TARGET=stm32g0b1re all` | `build/stm32g0b1re/bootloader/CanLoader.*` e `TestApplication/build/stm32g0b1re/canloader_test_app.*` |
-| `make test-c` | testes nativos de protocolo, TP, claim, FSM, config e metadata |
+| `make all` | bootloader e aplicação de teste de todos os targets em `build/<target>/` |
+| `make bootloader` | `build/stm32f103c8/bootloader/CanLoader.{elf,bin,hex,map,list}` |
+| `make test-application` | `build/stm32f103c8/test-application/canloader_test_app.{elf,bin,hex,map}` |
+| `make TARGET=stm32g0b1re all` | `build/stm32g0b1re/bootloader/CanLoader.*` e `build/stm32g0b1re/test-application/canloader_test_app.*` |
+| `make test-c` | testes nativos em `build/tests/c/` |
 | `make test-python` | serialização, scanner, cliente, TP, retries e CLI |
 | `make check-portability` | verifica que HAL/LL/CMSIS de dispositivo não vazaram para o núcleo comum |
 | `make test` | fronteira de portabilidade, testes C e testes Python |
@@ -193,7 +205,7 @@ PORT=/dev/cu.usbmodem2074318558421
 canloader info --interface slcan --channel "$PORT" \
   --address 0x80 --name "$TARGET_NAME"
 
-canloader update TestApplication/build/canloader_test_app.bin \
+canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   --interface slcan --channel "$PORT" \
   --address 0x80 --name "$TARGET_NAME" --run
 ```
@@ -287,13 +299,13 @@ canloader reboot --interface slcan --channel "$PORT" \
 Application/             FSM, configuração, metadata, imagem e handoff
 Protocol/                J1939, Address Claim, TP, CanLoader e CRC
 Portable/Inc/            contratos de CAN, Flash e plataforma
-Portable/stm32f1/Src/    HAL/bxCAN/FPEC/Cortex-M3
-Portable/stm32g0/Src/    HAL/FDCAN/Flash/Cortex-M0+
+Portable/stm32f103c8/    port HAL/bxCAN/FPEC/Cortex-M3
+Portable/stm32g0b1re/    port HAL/FDCAN/Flash/Cortex-M0+
 Config/                  mapa, NAME default, limites e timers
 Config/targets/          parâmetros físicos de cada target
-Targets/stm32g0b1re/     startup, inicialização e linker da NUCLEO
+Targets/<target>/         configuração, startup, inicialização e linker
 Tools/canloader/         pacote Python e CLI
-TestApplication/         aplicação relocada de validação
+TestApplication/         build comum e fontes relocadas por target
 Tests/                   testes C e Python sem hardware
 Docs/                    contrato, arquitetura, memória e evidências
 ```

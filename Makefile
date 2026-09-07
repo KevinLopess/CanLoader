@@ -1,5 +1,9 @@
 PROJECT := CanLoader
+TARGET_ORIGIN := $(origin TARGET)
 TARGET ?= stm32f103c8
+BUILD_ROOT ?= build
+SUPPORTED_TARGETS := $(patsubst Targets/%/target.mk,%,$(wildcard Targets/*/target.mk))
+TARGET_BUILD_GOALS := $(addprefix build-,$(SUPPORTED_TARGETS))
 STM32_GNU_BIN ?= $(firstword \
 	$(wildcard $(HOME)/apps/stm32cubeide/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin) \
 	$(wildcard /Applications/STM32CubeIDE.app/Contents/Eclipse/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin))
@@ -39,13 +43,21 @@ ASM_OBJECTS := $(addprefix $(BUILD_DIR)/,$(ASM_SOURCES:.s=.o))
 OBJECTS := $(C_OBJECTS) $(ASM_OBJECTS)
 DEPS := $(OBJECTS:.o=.d)
 
-.PHONY: all all-targets bootloader test-application check-portability test-c test-python test clean
+.PHONY: all all-targets target-all $(TARGET_BUILD_GOALS) bootloader \
+	test-application check-portability test-c test-python test clean
 
-all: bootloader test-application
+ifeq ($(TARGET_ORIGIN),undefined)
+all: all-targets
+else
+all: target-all
+endif
 
-all-targets:
-	$(MAKE) TARGET=stm32f103c8 all
-	$(MAKE) TARGET=stm32g0b1re all
+all-targets: $(TARGET_BUILD_GOALS)
+
+$(TARGET_BUILD_GOALS):
+	$(MAKE) TARGET=$(patsubst build-%,%,$@) target-all
+
+target-all: bootloader test-application
 
 bootloader: $(BUILD_DIR)/$(PROJECT).elf $(BUILD_DIR)/$(PROJECT).bin $(BUILD_DIR)/$(PROJECT).hex
 
@@ -70,8 +82,9 @@ $(BUILD_DIR)/%.o: %.s
 	$(CC) $(ASFLAGS) -c $< -o $@
 
 test-application:
-	$(MAKE) -C TestApplication $(TEST_APPLICATION_MAKEFILE) \
-		$(TEST_APPLICATION_ARGS) TOOLCHAIN=$(TOOLCHAIN_PREFIX) all
+	$(MAKE) -C TestApplication TARGET=$(TARGET) \
+		BUILD_DIR=$(abspath $(BUILD_ROOT)/$(TARGET)/test-application) \
+		TOOLCHAIN=$(TOOLCHAIN_PREFIX) all
 
 check-portability:
 	sh Tests/check_portability.sh
@@ -85,9 +98,6 @@ test-python:
 test: check-portability test-c test-python
 
 clean:
-	$(RM) -r build
-	$(MAKE) -C TestApplication clean
-	$(MAKE) -C TestApplication -f Makefile.stm32g0b1re clean
-	$(MAKE) -C Tests/c clean
+	$(RM) -r -- $(BUILD_ROOT)
 
 -include $(DEPS)

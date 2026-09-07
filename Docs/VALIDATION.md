@@ -101,10 +101,8 @@ Execute:
 
 ```sh
 make clean
-make bootloader
-make test-application
+make all
 make test
-make TARGET=stm32g0b1re all
 ```
 
 Na árvore atual, `make test-c` executa nove binários: os seis originais e três
@@ -112,15 +110,15 @@ variantes que recompilam configuração, FSM e metadata com os parâmetros G0.
 Confirme que todos foram executados, não apenas compilados:
 
 ```sh
-Tests/c/build/test_protocol
-Tests/c/build/test_j1939_address_claim
-Tests/c/build/test_j1939_tp
-Tests/c/build/test_device_config_v2
-Tests/c/build/test_bootloader
-Tests/c/build/test_metadata_image
-Tests/c/build/test_device_config_g0
-Tests/c/build/test_bootloader_g0
-Tests/c/build/test_metadata_image_g0
+build/tests/c/test_protocol
+build/tests/c/test_j1939_address_claim
+build/tests/c/test_j1939_tp
+build/tests/c/test_device_config_v2
+build/tests/c/test_bootloader
+build/tests/c/test_metadata_image
+build/tests/c/test_device_config_g0
+build/tests/c/test_bootloader_g0
+build/tests/c/test_metadata_image_g0
 ```
 
 E rode explicitamente a suíte Python:
@@ -129,8 +127,8 @@ E rode explicitamente a suíte Python:
 PYTHONPATH=Tools/canloader python -m pytest -q Tests/python
 ```
 
-Na execução usada para fechar esta documentação, as seis suítes C terminaram
-com `OK` e a suíte Python registrou `77 passed`. Esse baseline confirma a lógica
+Na execução usada para fechar esta documentação, as nove suítes C terminaram
+com `OK` e a suíte Python registrou `80 passed`. Esse baseline confirma a lógica
 sem hardware; repita-o no commit entregue e arquive a saída correspondente.
 
 Cobertura mínima esperada:
@@ -150,7 +148,7 @@ Cobertura mínima esperada:
 
 ### 4.1 Tamanho e mapa
 
-Registre `arm-none-eabi-size build/bootloader/CanLoader.elf`. A medição de
+Registre `arm-none-eabi-size build/stm32f103c8/bootloader/CanLoader.elf`. A medição de
 referência desta revisão é:
 
 ```text
@@ -167,9 +165,9 @@ contratual. O critério é não exceder 19456 bytes de carga em Flash e não
 sobrepor `0x08004C00`. Verifique no `.map` e nos ELF:
 
 ```sh
-arm-none-eabi-size build/bootloader/CanLoader.elf
-arm-none-eabi-objdump -h build/bootloader/CanLoader.elf
-arm-none-eabi-objdump -h TestApplication/build/canloader_test_app.elf
+arm-none-eabi-size build/stm32f103c8/bootloader/CanLoader.elf
+arm-none-eabi-objdump -h build/stm32f103c8/bootloader/CanLoader.elf
+arm-none-eabi-objdump -h build/stm32f103c8/test-application/canloader_test_app.elf
 ```
 
 Critérios:
@@ -250,7 +248,7 @@ ambiente de ensaio:
 ```sh
 STM32_Programmer_CLI -c port=SWD -e all
 STM32_Programmer_CLI -c port=SWD \
-  -w build/bootloader/CanLoader.bin 0x08000000 -v -rst
+  -w build/stm32f103c8/bootloader/CanLoader.bin 0x08000000 -v -rst
 ```
 
 Não grave a aplicação por SWD: ela deve chegar via CAN. Depois do reset, sem
@@ -326,7 +324,7 @@ abortar antes de comando mutável com erro de identidade.
 ## 9. TESTE C — update completo sem RUN
 
 ```sh
-canloader update TestApplication/build/canloader_test_app.bin \
+canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   "${CAN_ARGS[@]}" --address 0x80 --name "$TARGET_NAME" --verbose
 ```
 
@@ -363,7 +361,7 @@ Nos quatro TP.CM acima, os bytes 5..7 contêm o PGN DM16 em little-endian:
 ## 10. TESTE D — CRC independente
 
 ```sh
-python -c "from pathlib import Path; import zlib; p=Path('TestApplication/build/canloader_test_app.bin'); d=p.read_bytes(); print(len(d), f'0x{zlib.crc32(d)&0xffffffff:08X}')"
+python -c "from pathlib import Path; import zlib; p=Path('build/stm32f103c8/test-application/canloader_test_app.bin'); d=p.read_bytes(); print(len(d), f'0x{zlib.crc32(d)&0xffffffff:08X}')"
 
 canloader verify "${CAN_ARGS[@]}" --address 0x80 --name "$TARGET_NAME"
 canloader info "${CAN_ARGS[@]}" --address 0x80 --name "$TARGET_NAME"
@@ -463,7 +461,7 @@ alternativa, retorne o target a `0x80` e registre essa nova transição.
 Crie uma imagem válida preenchida até o limite atual de 43 KiB:
 
 ```sh
-python -c "from pathlib import Path; p=Path('TestApplication/build/canloader_test_app.bin'); d=p.read_bytes(); assert len(d)<=0xAC00; Path('/tmp/canloader-interrupt.bin').write_bytes(d.ljust(0xAC00,b'\xff'))"
+python -c "from pathlib import Path; p=Path('build/stm32f103c8/test-application/canloader_test_app.bin'); d=p.read_bytes(); assert len(d)<=0xAC00; Path('/tmp/canloader-interrupt.bin').write_bytes(d.ljust(0xAC00,b'\xff'))"
 ```
 
 Inicie o update no SA atual e interrompa fisicamente o target depois de pelo
@@ -490,7 +488,7 @@ cliente tenta ABORT cooperativo. Depois do reboot:
 Sem SWD e sem apagar o bootloader:
 
 ```sh
-canloader update TestApplication/build/canloader_test_app.bin \
+canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   "${CAN_ARGS[@]}" --address "$TARGET_SA" --name "$TARGET_NAME" --run --verbose
 ```
 
@@ -550,7 +548,7 @@ resolvido e o NAME exibido e selecione somente esse par:
 ```sh
 TARGET_B_SA=0x81                     # substituir se o fallback observado diferir
 TARGET_B_NAME=0x8000000000123456     # substituir pelo NAME de B
-canloader update TestApplication/build/canloader_test_app.bin \
+canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   "${CAN_ARGS[@]}" --address "$TARGET_B_SA" \
   --name "$TARGET_B_NAME" --run --verbose
 ```

@@ -22,7 +22,7 @@ um port explícito e validação própria. Os principais invariantes são:
 ## 2. Camadas e dependências
 
 ```text
-Core/Src/main.c ou Targets/<target>/Core/
+Targets/<target>/Core/Src/main.c
         |
         v
 Application/Src/bootloader.c  <---------- Config/boot_config.h
@@ -42,7 +42,7 @@ Protocol/
 Portable/Inc/{boot_can,boot_flash,boot_platform}.h
         |
         v
-Portable/stm32f1/Src/       Portable/stm32g0/Src/
+Portable/stm32f103c8/Src/   Portable/stm32g0b1re/Src/
   HAL + bxCAN + FPEC          HAL + FDCAN + Flash
   Cortex-M3                   Cortex-M0+
 

@@ -1,5 +1,5 @@
 ROOT := ../..
-BUILD_DIR := build
+BUILD_DIR ?= $(ROOT)/build/tests/c
 CC ?= cc
 
 CPPFLAGS += -I$(ROOT)/Config \
@@ -105,4 +105,4 @@ check: all
 	$(BUILD_DIR)/test_metadata_image_g0
 
 clean:
-	$(RM) $(PROGRAMS)
+	$(RM) -r -- $(BUILD_DIR)

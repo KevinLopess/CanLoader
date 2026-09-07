@@ -1071,7 +1071,7 @@ python -m canloader info --interface slcan \
   --channel /dev/cu.usbmodem2074318558421 --bitrate 500000 \
   --address 0x80 --name 0x8000000000123456
 
-python -m canloader update TestApplication/build/canloader_test_app.bin \
+python -m canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
   --interface slcan --channel /dev/cu.usbmodem2074318558421 \
   --bitrate 500000 --address 0x80 --name 0x8000000000123456 \
   --run --verbose
@@ -1170,6 +1170,7 @@ encontrar, usa `arm-none-eabi-*` do `PATH`; `STM32_GNU_BIN` ou
 Python 3.10 ou mais novo com o extra `test` instalado no ambiente virtual.
 
 ```sh
+make all
 make bootloader
 make test-application
 make test-c
@@ -1177,15 +1178,22 @@ make test-python PYTHON=.venv/bin/python
 make test PYTHON=.venv/bin/python
 ```
 
-Artefatos:
+Sem `TARGET` explícito, `make all` percorre todas as configurações encontradas
+em `Targets/*/target.mk`. Os demais alvos usam `stm32f103c8` por padrão e
+aceitam, por exemplo, `TARGET=stm32g0b1re`.
+
+Artefatos, sempre sob `build/<target>/`:
 
 ```text
-build/bootloader/CanLoader.elf
-build/bootloader/CanLoader.bin
-build/bootloader/CanLoader.hex
-build/bootloader/CanLoader.map
-build/bootloader/CanLoader.list
-TestApplication/build/canloader_test_app.{elf,bin,hex,map}
+build/stm32f103c8/bootloader/CanLoader.elf
+build/stm32f103c8/bootloader/CanLoader.bin
+build/stm32f103c8/bootloader/CanLoader.hex
+build/stm32f103c8/bootloader/CanLoader.map
+build/stm32f103c8/bootloader/CanLoader.list
+build/stm32f103c8/test-application/canloader_test_app.{elf,bin,hex,map}
+build/stm32g0b1re/bootloader/CanLoader.{elf,bin,hex,map,list}
+build/stm32g0b1re/test-application/canloader_test_app.{elf,bin,hex,map}
+build/tests/c/test_*
 ```
 
 Flags centrais: Cortex-M3/Thumb/soft-float, GNU C11, `-Os`, function/data sections,

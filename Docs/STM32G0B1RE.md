@@ -84,10 +84,10 @@ build/stm32g0b1re/bootloader/CanLoader.elf
 build/stm32g0b1re/bootloader/CanLoader.bin
 build/stm32g0b1re/bootloader/CanLoader.hex
 build/stm32g0b1re/bootloader/CanLoader.map
-TestApplication/build/stm32g0b1re/canloader_test_app.elf
-TestApplication/build/stm32g0b1re/canloader_test_app.bin
-TestApplication/build/stm32g0b1re/canloader_test_app.hex
-TestApplication/build/stm32g0b1re/canloader_test_app.map
+build/stm32g0b1re/test-application/canloader_test_app.elf
+build/stm32g0b1re/test-application/canloader_test_app.bin
+build/stm32g0b1re/test-application/canloader_test_app.hex
+build/stm32g0b1re/test-application/canloader_test_app.map
 ```
 
 O build requer GNU Arm Embedded Toolchain. O Makefile procura primeiro o
@@ -115,7 +115,7 @@ transmita a aplicação relocada:
 canloader ls --interface socketcan --channel can0
 
 canloader update \
-  TestApplication/build/stm32g0b1re/canloader_test_app.bin \
+  build/stm32g0b1re/test-application/canloader_test_app.bin \
   --interface socketcan --channel can0 \
   --address 0x80 --name '<NAME descoberto>' --run --verbose
 ```

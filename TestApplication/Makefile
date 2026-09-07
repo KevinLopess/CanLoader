@@ -1,6 +1,7 @@
-TARGET := canloader_test_app
-BUILD_DIR := build
+APP_NAME := canloader_test_app
 PROJECT_ROOT := ..
+TARGET ?= stm32f103c8
+BUILD_DIR ?= $(PROJECT_ROOT)/build/$(TARGET)/test-application
 
 STM32_GNU_BIN ?= $(firstword \
 	$(wildcard $(HOME)/apps/stm32cubeide/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin) \
@@ -10,28 +11,14 @@ CC := $(TOOLCHAIN)gcc
 OBJCOPY := $(TOOLCHAIN)objcopy
 SIZE := $(TOOLCHAIN)size
 
-CPU_FLAGS := -mcpu=cortex-m3 -mthumb
-DEFINES := -DSTM32F103xB
-INCLUDES := \
+COMMON_INCLUDES := \
 	-I$(PROJECT_ROOT)/Application/Inc \
 	-I$(PROJECT_ROOT)/Config \
 	-I$(PROJECT_ROOT)/Portable/Inc \
 	-I$(PROJECT_ROOT)/Protocol/Inc \
-	-I$(PROJECT_ROOT)/Drivers/CMSIS/Include \
-	-I$(PROJECT_ROOT)/Drivers/CMSIS/Device/ST/STM32F1xx/Include
+	-I$(PROJECT_ROOT)/Drivers/CMSIS/Include
 
-CFLAGS := $(CPU_FLAGS) -std=c11 -Os -g3 \
-	-ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
-	-Wall -Wextra -Werror -MMD -MP
-ASFLAGS := $(CPU_FLAGS) -x assembler-with-cpp -MMD -MP
-LDFLAGS := $(CPU_FLAGS) -nostdlib -Tlinker.ld \
-	-Wl,--gc-sections -Wl,--cref -Wl,--print-memory-usage \
-	-Wl,-Map=$(BUILD_DIR)/$(TARGET).map
-LDLIBS := -lgcc
-
-C_SOURCES := \
-	Src/main.c \
-	Src/system_stm32f1xx.c \
+COMMON_C_SOURCES := \
 	$(PROJECT_ROOT)/Application/Src/boot_device_config.c \
 	$(PROJECT_ROOT)/Application/Src/boot_metadata.c \
 	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c \
@@ -39,31 +26,39 @@ C_SOURCES := \
 	$(PROJECT_ROOT)/Protocol/Src/boot_j1939_address_claim.c \
 	$(PROJECT_ROOT)/Protocol/Src/boot_j1939_tp.c \
 	$(PROJECT_ROOT)/Protocol/Src/boot_protocol.c
-ASM_SOURCE := $(PROJECT_ROOT)/Core/Startup/startup_stm32f103c8tx.s
 
-OBJECTS := \
-	$(BUILD_DIR)/main.o \
-	$(BUILD_DIR)/system_stm32f1xx.o \
-	$(BUILD_DIR)/boot_device_config.o \
-	$(BUILD_DIR)/boot_metadata.o \
-	$(BUILD_DIR)/boot_crc32.o \
-	$(BUILD_DIR)/boot_j1939.o \
-	$(BUILD_DIR)/boot_j1939_address_claim.o \
-	$(BUILD_DIR)/boot_j1939_tp.o \
-	$(BUILD_DIR)/boot_protocol.o \
-	$(BUILD_DIR)/startup_stm32f103c8tx.o
+TARGET_CONFIG := Targets/$(TARGET)/target.mk
+ifeq ($(wildcard $(TARGET_CONFIG)),)
+$(error Unsupported TARGET '$(TARGET)'; missing TestApplication/$(TARGET_CONFIG))
+endif
+include $(TARGET_CONFIG)
+
+CFLAGS := $(CPU_FLAGS) -std=c11 -Os -g3 \
+	-ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
+	-Wall -Wextra -Werror -MMD -MP
+ASFLAGS := $(CPU_FLAGS) -x assembler-with-cpp -MMD -MP
+LDFLAGS := $(CPU_FLAGS) -nostdlib -T$(LINKER_SCRIPT) \
+	-Wl,--gc-sections -Wl,--cref -Wl,--print-memory-usage \
+	-Wl,-Map=$(BUILD_DIR)/$(APP_NAME).map
+LDLIBS := -lgcc
+
+C_SOURCES := $(TARGET_C_SOURCES_PREFIX) $(COMMON_C_SOURCES) \
+	$(TARGET_C_SOURCES_SUFFIX)
+VPATH := $(sort $(dir $(C_SOURCES) $(ASM_SOURCES)))
+OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o))) \
+	$(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
 DEPS := $(OBJECTS:.o=.d)
 
-ELF := $(BUILD_DIR)/$(TARGET).elf
-BIN := $(BUILD_DIR)/$(TARGET).bin
-HEX := $(BUILD_DIR)/$(TARGET).hex
+ELF := $(BUILD_DIR)/$(APP_NAME).elf
+BIN := $(BUILD_DIR)/$(APP_NAME).bin
+HEX := $(BUILD_DIR)/$(APP_NAME).hex
 
 .PHONY: all clean
 
 all: $(BIN) $(HEX)
 	$(SIZE) $(ELF)
 
-$(ELF): $(OBJECTS) linker.ld | $(BUILD_DIR)
+$(ELF): $(OBJECTS) $(LINKER_SCRIPT) | $(BUILD_DIR)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o $@
 
 $(BIN): $(ELF)
@@ -72,34 +67,10 @@ $(BIN): $(ELF)
 $(HEX): $(ELF)
 	$(OBJCOPY) -O ihex $< $@
 
-$(BUILD_DIR)/main.o: Src/main.c Makefile | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c Makefile $(TARGET_CONFIG) | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/system_stm32f1xx.o: Src/system_stm32f1xx.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_crc32.o: $(PROJECT_ROOT)/Protocol/Src/boot_crc32.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_device_config.o: $(PROJECT_ROOT)/Application/Src/boot_device_config.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_metadata.o: $(PROJECT_ROOT)/Application/Src/boot_metadata.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_j1939.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_j1939_address_claim.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939_address_claim.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_j1939_tp.o: $(PROJECT_ROOT)/Protocol/Src/boot_j1939_tp.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/boot_protocol.o: $(PROJECT_ROOT)/Protocol/Src/boot_protocol.c Makefile | $(BUILD_DIR)
-	$(CC) $(DEFINES) $(INCLUDES) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/startup_stm32f103c8tx.o: $(ASM_SOURCE) Makefile | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.s Makefile $(TARGET_CONFIG) | $(BUILD_DIR)
 	$(CC) $(DEFINES) $(INCLUDES) $(ASFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
