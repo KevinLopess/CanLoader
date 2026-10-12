@@ -973,3 +973,48 @@ def test_matching_control_nack_is_mapped() -> None:
     client = make_client(FakeBus(responder), device, target_name=device.name)
     with pytest.raises(NackError, match="current state"):
         client.identify()
+
+
+class ActivityDevice(V2Device):
+    activity_version = 1
+    legacy = False
+
+    def handle(self, frame, bus):
+        identifier = identifier_from_frame(frame)
+        if (identifier.pgn == PGN_PROPRIETARY_A
+                and identifier.destination_address == self.address):
+            request = decode_control_request(frame)
+            if request.command == Command.INFO and request.parameter >= 0x80:
+                if self.legacy:
+                    self._queue_response(bus, request, NackCode.INVALID_COMMAND,
+                                         kind=ResponseKind.NACK)
+                else:
+                    value = (self.activity_version if request.parameter == 0x80
+                             else request.parameter)
+                    self._queue_response(bus, request, value)
+                return
+        super().handle(frame, bus)
+
+
+def test_activity_reads_optional_counters_without_mutating_device() -> None:
+    device = ActivityDevice(application_running=True)
+    result = make_client(device_bus(device), device).read_activity()
+    assert result == dict(zip(
+        ['tx_queued', 'rx_valid', 'tx_skipped', 'last_rx_address',
+         'last_rx_sequence', 'last_rx_age_ms', 'rx_overruns', 'can_status', 'period_ms'],
+        range(0x81, 0x8A), strict=True))
+    assert set(device.commands) <= {Command.IDENTIFY, Command.INFO}
+    assert device.dm14_commands == []
+
+
+@pytest.mark.parametrize('mode, message', [
+    ('bootloader', 'require the test application'),
+    ('legacy', 'install the updated test application'),
+    ('version', 'unsupported activity protocol version'),
+])
+def test_activity_reports_incompatible_firmware(mode, message) -> None:
+    device = ActivityDevice(application_running=mode != 'bootloader')
+    device.legacy = mode == 'legacy'
+    device.activity_version = 2 if mode == 'version' else 1
+    with pytest.raises(ProtocolError, match=message):
+        make_client(device_bus(device), device).read_activity()

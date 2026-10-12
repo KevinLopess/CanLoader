@@ -621,6 +621,34 @@ class BootloaderClient(_RawEndpoint):
             query=True,
         )
 
+    def read_activity(self) -> dict[str, int]:
+        """Read sequential, volatile counters from the optional test application."""
+        if not self.info(InfoSelector.CAPABILITIES) & CAPABILITY_APPLICATION_RUNNING:
+            raise ProtocolError("activity counters require the test application to be running")
+        try:
+            version = self.info(InfoSelector.ACTIVITY_VERSION)
+        except NackError as exc:
+            if exc.code in (NackCode.INVALID_COMMAND, NackCode.UNSUPPORTED_OPERATION):
+                raise ProtocolError(
+                    "this application does not support activity counters; "
+                    "install the updated test application"
+                ) from exc
+            raise
+        if version != 1:
+            raise ProtocolError(f"unsupported activity protocol version {version}")
+        fields = {
+            "tx_queued": InfoSelector.ACTIVITY_TX_QUEUED,
+            "rx_valid": InfoSelector.ACTIVITY_RX_VALID,
+            "tx_skipped": InfoSelector.ACTIVITY_TX_SKIPPED,
+            "last_rx_address": InfoSelector.ACTIVITY_LAST_RX_ADDRESS,
+            "last_rx_sequence": InfoSelector.ACTIVITY_LAST_RX_SEQUENCE,
+            "last_rx_age_ms": InfoSelector.ACTIVITY_LAST_RX_AGE_MS,
+            "rx_overruns": InfoSelector.ACTIVITY_RX_OVERRUNS,
+            "can_status": InfoSelector.ACTIVITY_CAN_STATUS,
+            "period_ms": InfoSelector.ACTIVITY_PERIOD_MS,
+        }
+        return {key: self.info(selector) for key, selector in fields.items()}
+
     def read_device_info(self) -> DeviceInfo:
         self._prepare_target()
         assert self.target_name is not None

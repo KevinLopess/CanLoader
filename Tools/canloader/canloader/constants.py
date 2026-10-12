@@ -101,6 +101,17 @@ class InfoSelector(IntEnum):
     NAME_HIGH = 9
     SOURCE_ADDRESS = 10
     FLASH_ERASE_UNIT_SIZE = 11
+    # Optional test-application INFO extension; not implemented by bootloader.
+    ACTIVITY_VERSION = 0x80
+    ACTIVITY_TX_QUEUED = 0x81
+    ACTIVITY_RX_VALID = 0x82
+    ACTIVITY_TX_SKIPPED = 0x83
+    ACTIVITY_LAST_RX_ADDRESS = 0x84
+    ACTIVITY_LAST_RX_SEQUENCE = 0x85
+    ACTIVITY_LAST_RX_AGE_MS = 0x86
+    ACTIVITY_RX_OVERRUNS = 0x87
+    ACTIVITY_CAN_STATUS = 0x88
+    ACTIVITY_PERIOD_MS = 0x89
 
 
 class Dm14Command(IntEnum):

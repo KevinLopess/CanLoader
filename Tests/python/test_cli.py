@@ -141,3 +141,35 @@ def test_serial_backends_receive_bitrates_but_socketcan_does_not(monkeypatch) ->
     assert calls[1]["tty_baudrate"] == 2000000
     assert calls[2]["bitrate"] is None
     assert calls[2]["tty_baudrate"] is None
+
+
+@pytest.mark.parametrize('peer, status', [(0x81, 0x70102), (0xFF, 0xFFFFFFFF)])
+def test_activity_output_distinguishes_reception_and_queueing(
+    monkeypatch, capsys, peer, status
+) -> None:
+    class FakeClient:
+        address = 0x80
+        target_name = J1939Name(0x8000000000001234)
+
+        def read_activity(self):
+            return dict(tx_queued=20, rx_valid=12, tx_skipped=3,
+                        last_rx_address=peer, last_rx_sequence=7,
+                        last_rx_age_ms=42, rx_overruns=2,
+                        can_status=status, period_ms=100)
+
+    monkeypatch.setattr(cli, '_open_from_args', lambda *a: DummyContextBus())
+    monkeypatch.setattr(cli, '_client_from_args', lambda *a: FakeClient())
+    cli._run_command(cli.build_parser().parse_args(['activity']))
+    output = capsys.readouterr().out
+    assert 'TX queued (not delivery-confirmed): 20' in output
+    assert 'RX valid peer heartbeats: 12' in output
+    assert 'RX FIFO overrun observations: 2' in output
+    if peer == 0xFF:
+        assert 'none received since application start' in output
+        assert 'CAN error status: unavailable' in output
+        assert 'Last peer age:' not in output
+    else:
+        assert 'Last peer: 0x81' in output
+        assert 'Last peer age: 42 ms' in output
+        assert 'TEC=2 REC=1' in output
+        assert 'bus_off=True error_passive=True warning=True' in output

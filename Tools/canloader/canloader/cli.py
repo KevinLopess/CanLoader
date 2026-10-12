@@ -132,6 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("info", parents=[common], help="read bootloader information")
+    subparsers.add_parser(
+        "activity", parents=[common], help="read test-application CAN activity counters"
+    )
 
     update = subparsers.add_parser(
         "update", parents=[common], help="transfer and verify a firmware image"
@@ -257,6 +260,32 @@ def _run_command(args: argparse.Namespace) -> None:
             print(f"Stored image size: {info.stored_size} bytes")
             print(f"Stored image CRC: 0x{info.stored_crc:08X}")
             print(f"Device UID: {info.uid}")
+        elif args.command == "activity":
+            stats = client.read_activity()
+            print(f"Address: 0x{client.address:02X}")
+            print(f"NAME: {client.target_name}")
+            print(f"Heartbeat period: {stats['period_ms']} ms")
+            print(f"TX queued (not delivery-confirmed): {stats['tx_queued']}")
+            print(f"RX valid peer heartbeats: {stats['rx_valid']}")
+            print(f"TX skipped (queue busy): {stats['tx_skipped']}")
+            print(f"RX FIFO overrun observations: {stats['rx_overruns']}")
+            if stats['last_rx_address'] == 0xFF:
+                print("Last peer: none received since application start")
+            else:
+                print(f"Last peer: 0x{stats['last_rx_address']:02X}")
+                print(f"Last peer sequence: {stats['last_rx_sequence']}")
+                print(f"Last peer age: {stats['last_rx_age_ms']} ms")
+            status = stats['can_status']
+            if status == 0xFFFFFFFF:
+                print("CAN error status: unavailable")
+            else:
+                print(f"CAN errors: TEC={status & 0xFF} REC={(status >> 8) & 0xFF}")
+                print(
+                    f"CAN state: bus_off={bool(status & (1 << 16))} "
+                    f"error_passive={bool(status & (1 << 17))} "
+                    f"warning={bool(status & (1 << 18))}"
+                )
+            print("Counters reset at application start; fields are sampled sequentially.")
         elif args.command == "update":
             assert image is not None
             result = client.update(image, run=args.run, progress=_Progress())
