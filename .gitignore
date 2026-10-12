@@ -27,3 +27,8 @@ dist/
 # Local editor and research input supplied outside the source tree
 /.vscode/
 /TCCKevinLopes.pdf
+
+# Operating system and local scratch files
+.DS_Store
+.venv*/
+/tmp/

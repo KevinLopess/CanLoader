@@ -35,10 +35,11 @@ formato atual, identificado internamente pelo valor `0x02`.
 - testes C nativos executados com as configurações dos dois targets;
 - aplicações de referência relocadas para os dois mapas de memória.
 
-A sessão física já registrada no repositório cobre o STM32F103. O port da
-NUCLEO-G0B1RE compila e passa pelas verificações automatizadas, mas ainda exige
-validação elétrica e funcional na placa. Consulte
-[STM32G0B1RE.md](Docs/STM32G0B1RE.md) antes de gravá-la.
+Os ensaios de bancada de 29 e 30 de setembro de 2026 cobrem os dois alvos:
+duas Blue Pill (STM32F103C8) e uma NUCLEO-G0B1RE no mesmo barramento, com
+atualização dirigida de cada placa e recuperação após interrupções. Os
+registros estão em [`Validation/evidence/`](Validation/evidence/). Consulte
+[STM32G0B1RE.md](Docs/STM32G0B1RE.md) antes de gravar a NUCLEO.
 
 ## Mapas de memória
 
@@ -307,7 +308,9 @@ Targets/<target>/         configuração, startup, inicialização e linker
 Tools/canloader/         pacote Python e CLI
 TestApplication/         build comum e fontes relocadas por target
 Tests/                   testes C e Python sem hardware
-Docs/                    contrato, arquitetura, memória e evidências
+Core/Src/                syscalls e sysmem comuns aos dois targets
+Validation/              scripts de sessão registrada e evidências de bancada
+Docs/                    contrato, arquitetura, memória e histórico
 ```
 
 ## Documentação
@@ -321,3 +324,4 @@ Docs/                    contrato, arquitetura, memória e evidências
 - [Plano de validação](Docs/VALIDATION.md)
 - [Limitações e ameaças](Docs/LIMITATIONS.md)
 - [Relação com o TCC](Docs/TCC_DIVERGENCES.md)
+- [Histórico de desenvolvimento e dos commits](Docs/HISTORY.md)
