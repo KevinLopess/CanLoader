@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "app_activity.h"
 #include "boot_can.h"
 #include "boot_config.h"
 #include "boot_crc32.h"
@@ -29,15 +30,8 @@
 #define BXCAN_IDE_BIT              UINT32_C(0x04)
 #define BXCAN_RTR_BIT              UINT32_C(0x02)
 
-typedef enum
-{
-    BLINK_FIRST_ON,
-    BLINK_FIRST_OFF,
-    BLINK_SECOND_ON,
-    BLINK_PAUSE
-} blink_phase_t;
-
 static volatile uint32_t system_tick_ms;
+static app_activity_t activity;
 static boot_device_config_t device_config;
 static boot_j1939_address_claim_t address_claim;
 static boot_j1939_tp_rx_t tp_receiver;
@@ -391,6 +385,11 @@ static bool can_send_frame(const boot_can_frame_t *frame)
     return true;
 }
 
+static bool enqueue_activity(const boot_can_frame_t *frame)
+{
+    return (tx_count == 0U) && queue_frame(frame);
+}
+
 static void flush_tx(void)
 {
     if ((tx_count > 0U) && can_send_frame(&tx_queue[tx_head]))
@@ -433,6 +432,11 @@ static bool can_receive_frame(boot_can_frame_t *frame)
         return false;
     }
 
+    if ((CAN1->RF0R & CAN_RF0R_FOVR0) != 0U)
+    {
+        ++activity.rx_overruns;
+        CAN1->RF0R = CAN_RF0R_FOVR0;
+    }
     rir = CAN1->sFIFOMailBox[0].RIR;
     rdtr = CAN1->sFIFOMailBox[0].RDTR;
     write_u32_le(&frame->data[0], CAN1->sFIFOMailBox[0].RDLR);
@@ -482,6 +486,16 @@ static uint32_t capability_word(void)
            ((uint32_t)BOOT_TARGET_CODE << 24U);
 }
 
+static uint32_t activity_can_status(void)
+{
+    const uint32_t esr = CAN1->ESR;
+    /* TEC[7:0], REC[15:8], bus-off[16], passive[17], warning[18]. */
+    return ((esr >> 16U) & 0xFFU) | ((esr >> 16U) & 0xFF00U) |
+           ((esr & CAN_ESR_BOFF) ? (1UL << 16U) : 0U) |
+           ((esr & CAN_ESR_EPVF) ? (1UL << 17U) : 0U) |
+           ((esr & CAN_ESR_EWGF) ? (1UL << 18U) : 0U);
+}
+
 static bool info_value(uint8_t selector, uint32_t *value)
 {
     boot_metadata_t metadata;
@@ -491,6 +505,15 @@ static bool info_value(uint8_t selector, uint32_t *value)
     if (value == NULL)
     {
         return false;
+    }
+    if (selector == APP_INFO_CAN_STATUS)
+    {
+        *value = activity_can_status();
+        return true;
+    }
+    if (app_activity_info(&activity, selector, system_tick_ms, value))
+    {
+        return true;
     }
     switch ((boot_info_selector_t)selector)
     {
@@ -702,6 +725,11 @@ static void dispatch_can(const boot_can_frame_t *frame)
 {
     boot_j1939_header_t header;
 
+    if (app_activity_receive(&activity, frame, local_address(), system_tick_ms))
+    {
+        return;
+    }
+
     (void)boot_j1939_address_claim_handle(&address_claim,
                                            frame,
                                            system_tick_ms);
@@ -754,7 +782,7 @@ static void service_network(void)
     collect_claim_tx();
     service_tp();
     flush_tx();
-    while (can_receive_frame(&frame))
+    for (uint8_t budget = 0U; (budget < 8U) && can_receive_frame(&frame); ++budget)
     {
         dispatch_can(&frame);
         if (tx_count >= APP_TX_QUEUE_CAPACITY)
@@ -772,8 +800,6 @@ void SysTick_Handler(void)
 
 int main(void)
 {
-    blink_phase_t phase;
-    uint32_t deadline;
     bool can_ready;
 
     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
@@ -791,6 +817,7 @@ int main(void)
         }
     }
 
+    app_activity_init(&activity, system_tick_ms);
     boot_device_config_load(&device_config);
     boot_j1939_address_claim_init(&address_claim,
                                   device_config.name,
@@ -815,10 +842,6 @@ int main(void)
                     SysTick_CTRL_TICKINT_Msk |
                     SysTick_CTRL_ENABLE_Msk;
 
-    phase = BLINK_FIRST_ON;
-    led_on();
-    deadline = system_tick_ms + 80U;
-
     for (;;)
     {
         const uint32_t now = system_tick_ms;
@@ -826,6 +849,12 @@ int main(void)
         if (can_ready)
         {
             service_network();
+            app_activity_service(&activity, system_tick_ms, local_address(),
+                                  BOOT_TARGET_CODE,
+                                  !boot_reset_pending &&
+                                  boot_j1939_address_claim_is_operational(&address_claim),
+                                  enqueue_activity);
+            flush_tx();
         }
         if (boot_reset_pending &&
             ((((CAN1->TSR & (CAN_TSR_RQCP0 | CAN_TSR_TXOK0)) ==
@@ -837,33 +866,15 @@ int main(void)
             request_bootloader_reset();
         }
 
-        if ((int32_t)(now - deadline) >= 0)
+        if (app_activity_led_on(&activity, now))
         {
-            switch (phase)
-            {
-                case BLINK_FIRST_ON:
-                    led_off();
-                    phase = BLINK_FIRST_OFF;
-                    deadline += 100U;
-                    break;
-                case BLINK_FIRST_OFF:
-                    led_on();
-                    phase = BLINK_SECOND_ON;
-                    deadline += 80U;
-                    break;
-                case BLINK_SECOND_ON:
-                    led_off();
-                    phase = BLINK_PAUSE;
-                    deadline += 740U;
-                    break;
-                case BLINK_PAUSE:
-                default:
-                    led_on();
-                    phase = BLINK_FIRST_ON;
-                    deadline += 80U;
-                    break;
-            }
+            led_on();
         }
-        __WFI();
+        else
+        {
+            led_off();
+        }
+        /* Poll continuously: WFI with only SysTick delayed draining bxCAN
+         * by up to 1 ms and could lose bursts in the three-frame FIFO. */
     }
 }

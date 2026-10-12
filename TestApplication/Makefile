@@ -11,14 +11,14 @@ CC := $(TOOLCHAIN)gcc
 OBJCOPY := $(TOOLCHAIN)objcopy
 SIZE := $(TOOLCHAIN)size
 
-COMMON_INCLUDES := \
+COMMON_INCLUDES := -ICommon \
 	-I$(PROJECT_ROOT)/Application/Inc \
 	-I$(PROJECT_ROOT)/Config \
 	-I$(PROJECT_ROOT)/Portable/Inc \
 	-I$(PROJECT_ROOT)/Protocol/Inc \
 	-I$(PROJECT_ROOT)/Drivers/CMSIS/Include
 
-COMMON_C_SOURCES := \
+COMMON_C_SOURCES := Common/app_activity.c \
 	$(PROJECT_ROOT)/Application/Src/boot_device_config.c \
 	$(PROJECT_ROOT)/Application/Src/boot_metadata.c \
 	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c \

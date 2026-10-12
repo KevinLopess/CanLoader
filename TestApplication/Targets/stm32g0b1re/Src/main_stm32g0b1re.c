@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "app_activity.h"
 #include "boot_can.h"
 #include "boot_config.h"
 #include "boot_device_config.h"
@@ -20,14 +21,7 @@
 
 FDCAN_HandleTypeDef hfdcan1;
 
-typedef enum
-{
-    BLINK_FIRST_ON,
-    BLINK_FIRST_OFF,
-    BLINK_SECOND_ON,
-    BLINK_PAUSE
-} blink_phase_t;
-
+static app_activity_t activity;
 static boot_device_config_t device_config;
 static boot_j1939_address_claim_t address_claim;
 static boot_j1939_tp_rx_t tp_receiver;
@@ -130,6 +124,11 @@ static bool queue_frame(const boot_can_frame_t *frame)
     return true;
 }
 
+static bool enqueue_activity(const boot_can_frame_t *frame)
+{
+    return (tx_count == 0U) && queue_frame(frame);
+}
+
 static void flush_tx(void)
 {
     if ((tx_count > 0U) &&
@@ -187,6 +186,21 @@ static uint32_t capability_word(void)
            ((uint32_t)BOOT_TARGET_CODE << 24U);
 }
 
+static uint32_t activity_can_status(void)
+{
+    FDCAN_ErrorCountersTypeDef counters = {0};
+    FDCAN_ProtocolStatusTypeDef status = {0};
+    if ((HAL_FDCAN_GetErrorCounters(&hfdcan1, &counters) != HAL_OK) ||
+        (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status) != HAL_OK))
+    {
+        return UINT32_MAX;
+    }
+    return (counters.TxErrorCnt & 0xFFU) | ((counters.RxErrorCnt & 0xFFU) << 8U) |
+           (status.BusOff ? (1UL << 16U) : 0U) |
+           (status.ErrorPassive ? (1UL << 17U) : 0U) |
+           (status.Warning ? (1UL << 18U) : 0U);
+}
+
 static bool info_value(uint8_t selector, uint32_t *value)
 {
     boot_metadata_t metadata;
@@ -196,6 +210,15 @@ static bool info_value(uint8_t selector, uint32_t *value)
     if (value == NULL)
     {
         return false;
+    }
+    if (selector == APP_INFO_CAN_STATUS)
+    {
+        *value = activity_can_status();
+        return true;
+    }
+    if (app_activity_info(&activity, selector, HAL_GetTick(), value))
+    {
+        return true;
     }
     switch ((boot_info_selector_t)selector)
     {
@@ -400,6 +423,11 @@ static void dispatch_can(const boot_can_frame_t *frame, uint32_t now)
 {
     boot_j1939_header_t header;
 
+    if (app_activity_receive(&activity, frame, local_address(), now))
+    {
+        return;
+    }
+
     (void)boot_j1939_address_claim_handle(&address_claim, frame, now);
     apply_claim_address_change();
     collect_claim_tx();
@@ -448,8 +476,6 @@ static void service_network(uint32_t now)
 
 int main(void)
 {
-    blink_phase_t phase = BLINK_FIRST_ON;
-    uint32_t deadline;
     bool can_ready;
 
     HAL_Init();
@@ -468,6 +494,7 @@ int main(void)
     }
 
     (void)boot_flash_init();
+    app_activity_init(&activity, HAL_GetTick());
     boot_device_config_load(&device_config);
     boot_j1939_address_claim_init(&address_claim,
                                   device_config.name,
@@ -486,7 +513,6 @@ int main(void)
     HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
                       LED_BOOTLOADER_Pin,
                       GPIO_PIN_SET);
-    deadline = HAL_GetTick() + 80U;
 
     for (;;)
     {
@@ -494,7 +520,17 @@ int main(void)
 
         if (can_ready)
         {
+            if ((hfdcan1.Instance->IR & FDCAN_IR_RF0L) != 0U)
+            {
+                ++activity.rx_overruns;
+                hfdcan1.Instance->IR = FDCAN_IR_RF0L;
+            }
             service_network(now);
+            app_activity_service(&activity, now, local_address(), BOOT_TARGET_CODE,
+                                  !boot_reset_pending &&
+                                  boot_j1939_address_claim_is_operational(&address_claim),
+                                  enqueue_activity);
+            flush_tx();
         }
         if (boot_reset_pending &&
             ((((int32_t)(now - boot_reset_deadline) >= 0) &&
@@ -505,41 +541,9 @@ int main(void)
             boot_platform_reset();
         }
 
-        if ((int32_t)(now - deadline) >= 0)
-        {
-            switch (phase)
-            {
-                case BLINK_FIRST_ON:
-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
-                                      LED_BOOTLOADER_Pin,
-                                      GPIO_PIN_RESET);
-                    phase = BLINK_FIRST_OFF;
-                    deadline += 100U;
-                    break;
-                case BLINK_FIRST_OFF:
-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
-                                      LED_BOOTLOADER_Pin,
-                                      GPIO_PIN_SET);
-                    phase = BLINK_SECOND_ON;
-                    deadline += 80U;
-                    break;
-                case BLINK_SECOND_ON:
-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
-                                      LED_BOOTLOADER_Pin,
-                                      GPIO_PIN_RESET);
-                    phase = BLINK_PAUSE;
-                    deadline += 740U;
-                    break;
-                case BLINK_PAUSE:
-                default:
-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
-                                      LED_BOOTLOADER_Pin,
-                                      GPIO_PIN_SET);
-                    phase = BLINK_FIRST_ON;
-                    deadline += 80U;
-                    break;
-            }
-        }
+        HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port, LED_BOOTLOADER_Pin,
+                          app_activity_led_on(&activity, now) ?
+                          GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 }
 

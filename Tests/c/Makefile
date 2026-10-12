@@ -2,7 +2,7 @@ ROOT := ../..
 BUILD_DIR ?= $(ROOT)/build/tests/c
 CC ?= cc
 
-CPPFLAGS += -I$(ROOT)/Config \
+CPPFLAGS += -I$(ROOT)/TestApplication/Common -I$(ROOT)/Config \
             -I$(ROOT)/Portable/Inc \
             -I$(ROOT)/Protocol/Inc \
             -I$(ROOT)/Application/Inc
@@ -12,7 +12,8 @@ SANITIZER_FLAGS ?=
 CFLAGS += $(SANITIZER_FLAGS)
 LDFLAGS += $(SANITIZER_FLAGS)
 
-PROGRAMS := $(BUILD_DIR)/test_protocol \
+PROGRAMS := $(BUILD_DIR)/test_app_activity \
+            $(BUILD_DIR)/test_protocol \
             $(BUILD_DIR)/test_j1939_address_claim \
             $(BUILD_DIR)/test_j1939_tp \
             $(BUILD_DIR)/test_device_config_v2 \
@@ -28,6 +29,11 @@ all: $(PROGRAMS)
 
 $(BUILD_DIR):
 	mkdir -p $@
+
+$(BUILD_DIR)/test_app_activity: test_app_activity.c \
+                                 $(ROOT)/TestApplication/Common/app_activity.c \
+                                 $(ROOT)/Protocol/Src/boot_j1939.c | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(BUILD_DIR)/test_protocol: test_protocol.c \
                              $(ROOT)/Protocol/Src/boot_crc32.c \
@@ -94,6 +100,7 @@ $(BUILD_DIR)/test_metadata_image_g0: test_metadata_image.c \
 	$(CC) $(CPPFLAGS) -DBOOT_TARGET_STM32G0B1RE $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 check: all
+	$(BUILD_DIR)/test_app_activity
 	$(BUILD_DIR)/test_protocol
 	$(BUILD_DIR)/test_j1939_address_claim
 	$(BUILD_DIR)/test_j1939_tp
