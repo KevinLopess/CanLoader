@@ -1,0 +1,46 @@
+started_at=2026-09-30T07:18:29.100300-03:00
+cwd=/Users/kevinlopes/Projects/TCC/CanLoader
+command_json=[".venv/bin/python", "-m", "canloader", "run", "--address", "0x80", "--name", "0x80000000000E30EA", "--scan-timeout", "1", "--timeout", "1", "--retries", "0", "--interface", "slcan", "--channel", "/dev/cu.usbmodem2074318558421", "--bitrate", "500000", "--verbose"]
+
+DEBUG: can config: {'bitrate': 500000, 'interface': 'slcan', 'channel': '/dev/cu.usbmodem2074318558421'}
+DEBUG: TX 18EEFFF9 [8] 01 00 00 00 00 00 00 a0
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 dc 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 d7 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 dd 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 d8 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 de 07 00 00
+DEBUG: TX 18EAFFF9 [8] 00 ee 00 ff ff ff ff ff
+DEBUG: RX 18EEFF81 [8] e2 63 16 00 00 00 00 80
+DEBUG: RX 18EEFF80 [8] ea 30 0e 00 00 00 00 80
+DEBUG: RX 18EEFF82 [8] af 19 17 00 00 00 00 80
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 d9 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 df 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 da 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e0 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 db 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e1 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 dc 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e2 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 dd 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e3 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 de 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e4 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 df 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e5 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 e0 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e6 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 e1 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e7 07 00 00
+DEBUG: RX 1CFFFF82 [8] 43 4c 01 f1 e2 07 00 00
+DEBUG: RX 1CFFFF81 [8] 43 4c 01 b1 e8 07 00 00
+DEBUG: TX 18EF80F9 [8] 02 01 d3 00 00 00 00 00
+DEBUG: RX 18EFF980 [8] 02 80 01 d3 38 80 02 f1
+DEBUG: TX 18EF80F9 [8] 02 02 d4 04 00 00 00 00
+DEBUG: RX 18EFF980 [8] 02 80 02 d4 bb 11 6a 0b
+DEBUG: TX 18EF80F9 [8] 02 32 d2 00 00 00 00 00
+DEBUG: RX 18EFF980 [8] 02 81 32 d2 0b 00 00 00
+canloader: error: device rejected RUN_APPLICATION: application image is invalid (code 11)
+
+ended_at=2026-09-30T07:18:32.494757-03:00
+duration_seconds=3.394470
+exit_code=2

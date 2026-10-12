@@ -1,0 +1,13 @@
+{
+  "inicio": "2026-09-29T22:39:47.010077-03:00",
+  "sessao_piloto": "/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-29-222857-bancada-guiada",
+  "relato_autor": "Autor confirma testes anteriores de corte de alimentação, desconexão CAN/USB e encerramento da ferramenta, com permanência no bootloader aguardando novo envio. Não há registros novos desses cortes físicos nesta sessão.",
+  "ensaio_atual": "Encerramento abrupto do processo da ferramenta durante a transferência para Blue Pill A, seguido de consulta, tentativa de execução e recuperação.",
+  "alvo": {
+    "endereco": "0x80",
+    "NAME": "0x80000000000E30EA"
+  },
+  "limiar_progresso_bytes": 4000,
+  "imagem_bytes": 7776,
+  "commit_local": "2ff3de6bce6269537919420d454942e2e7a2596d"
+}

@@ -1,0 +1,30 @@
+{
+  "inicio": "2026-09-29T22:42:58.958074-03:00",
+  "fase": "identificacao fisica",
+  "acao_autor": "Autor informou desligamento da Blue Pill da direita, com demais participantes mantidos ligados.",
+  "sessao_anterior": "/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-29-223947-interrupcao-ferramenta",
+  "identificacao_fisica": {
+    "posicao": "direita",
+    "endereco": "0x80",
+    "NAME": "0x80000000000E30EA",
+    "evidencia": "Ausente após desligamento informado pelo autor; NUCLEO 0x81 e Blue Pill 0x82 presentes."
+  },
+  "imagem_ensaio": {
+    "arquivo": "imagens/stm32f103c8-interrupcao-44032.bin",
+    "bytes": 44032,
+    "crc": "0x0B6A11BB",
+    "sha256": "12396ff0c3b49d2af5fd1563070a68f25f1434934d21fa319dc0f369ac901942",
+    "preparo": "Aplicação original preservada no início; preenchimento com 0xFF até APP_MAX_SIZE de 44032 bytes, conforme Docs/VALIDATION.md."
+  },
+  "instrumentacao_planejada": {
+    "pausa_apos_bloco_segundos": 0.25,
+    "finalidade": "Dar tempo para corte manual durante transferência. Não usar esta operação para medição de desempenho.",
+    "retries": 0,
+    "limiar_aviso_bytes": 1000
+  },
+  "corte_confirmado_pelo_autor": {
+    "recebido_em": "2026-09-29T22:45:15.338920-03:00",
+    "acao": "Desliguei a Blue Pill da direita",
+    "nota": "Instante de registro da confirmação; não é medição do instante elétrico do corte."
+  }
+}

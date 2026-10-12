@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "test": "09-descoberta-final",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "ls",
+    "--scan-timeout",
+    "1",
+    "--identify-timeout",
+    "1",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-09-29T22:46:34.745933-03:00",
+  "ended_at": "2026-09-29T22:46:38.137959-03:00",
+  "duration_seconds": 3.392031,
+  "exit_code": 0,
+  "interrupted": false,
+  "spawn_error": null,
+  "log": "commands/20260929T224634-0300-09-descoberta-final.log"
+}

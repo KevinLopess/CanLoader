@@ -1,0 +1,30 @@
+{
+  "inicio": "2026-09-29T22:47:51.733382-03:00",
+  "alvo": {
+    "posicao": "Blue Pill direita",
+    "endereco": "0x80",
+    "NAME": "0x80000000000E30EA"
+  },
+  "condicao": "Retirada manual do cabo USB do CANable durante a transferência; autor confirmou que as três placas permanecem alimentadas por outras conexões.",
+  "instrumentacao": "Imagem preenchida até 44032 bytes e pausa de 250 ms após cada bloco, iguais ao ensaio de alimentação. Não utilizar como medida de desempenho.",
+  "sessao_anterior": "/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-29-224258-interrupcao-alimentacao",
+  "tentativa1": {
+    "resultado": "Transferência integral concluída antes da confirmação do corte; não utilizar como evidência de interrupção.",
+    "retorno": 0,
+    "bytes_verificados": 44032,
+    "crc_verificado": "0x0B6A11BB",
+    "fim_registrado": "2026-09-29T22:49:54.554955-03:00",
+    "confirmacao_posterior": "Autor informou desconexão USB após essa execução ter terminado. Requer reconexão para novo ensaio.",
+    "registro_confirmacao": "2026-09-30T07:16:22.224008-03:00"
+  },
+  "tentativa2": {
+    "instrumentacao": "Pausa de 1 s após cada bloco concluído, aviso aos 1000 bytes.",
+    "estado_inicial": "Imagem de 44032 bytes validada na tentativa anterior; nenhuma execução automática solicitada.",
+    "adaptador": "Autor confirmou reconexão antes da repetição.",
+    "confirmacao_autor": "Desconectei o USB agora",
+    "ultimo_progresso_exibido": [
+      "1800",
+      "44032"
+    ]
+  }
+}
