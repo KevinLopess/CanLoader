@@ -123,3 +123,21 @@ python -m pytest -q Tests/python
 A suíte cobre vetores de ID/NAME, Address Claim e arbitragem, TP/BAM/RTS-CTS,
 DM14/DM15/DM16 byte a byte, identidade do alvo, duas ECUs simultâneas, CLI e
 adaptação `python-can`/SLCAN.
+
+## Atividade CAN da aplicação de teste
+
+O comando `canloader activity` consulta os contadores opcionais da aplicação de
+teste atualizada. Aceita as mesmas opções de interface, canal, SA e NAME de
+`info`. Por exemplo:
+
+```sh
+canloader activity --interface socketcan --channel can0 \
+  --address 0x80 --name 0x8000000000123456
+```
+
+Mostra mensagens enfileiradas, recepções válidas de outros dispositivos,
+tentativas adiadas, última origem e indicadores de erro do controlador CAN.
+Enfileiramento não confirma entrega. Os contadores reiniciam com a aplicação
+e são consultados sequencialmente. O bootloader e aplicações antigas não
+implementam essa extensão. Consulte o [roteiro da aplicação de teste](../../TestApplication/README.md#comunicação-periódica-e-diagnóstico)
+para gravar as imagens, interpretar os LEDs e ensaiar atualização com tráfego.
