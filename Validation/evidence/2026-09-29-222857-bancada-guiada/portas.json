@@ -1,0 +1,52 @@
+[
+  {
+    "device": "/dev/cu.debug-console",
+    "description": "n/a",
+    "manufacturer": null,
+    "product": null,
+    "serial_number": null,
+    "vid": null,
+    "pid": null,
+    "location": null
+  },
+  {
+    "device": "/dev/cu.Bluetooth-Incoming-Port",
+    "description": "n/a",
+    "manufacturer": null,
+    "product": null,
+    "serial_number": null,
+    "vid": null,
+    "pid": null,
+    "location": null
+  },
+  {
+    "device": "/dev/cu.QCYH3Pro",
+    "description": "n/a",
+    "manufacturer": null,
+    "product": null,
+    "serial_number": null,
+    "vid": null,
+    "pid": null,
+    "location": null
+  },
+  {
+    "device": "/dev/cu.usbmodem11303",
+    "description": "STM32 STLink",
+    "manufacturer": "STMicroelectronics",
+    "product": "STM32 STLink",
+    "serial_number": "066EFF363947423043122331",
+    "vid": 1155,
+    "pid": 14155,
+    "location": "1-1.3"
+  },
+  {
+    "device": "/dev/cu.usbmodem2074318558421",
+    "description": "CANable2 b158aa7 github.com/normaldotcom/canable2.git",
+    "manufacturer": "Openlight Labs",
+    "product": "CANable2 b158aa7 github.com/normaldotcom/canable2.git",
+    "serial_number": "207431855842",
+    "vid": 5840,
+    "pid": 4478,
+    "location": "0-1.2"
+  }
+]

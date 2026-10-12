@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "test": "05-nucleo-info-bluepill-b",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "info",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--address",
+    "0x82",
+    "--name",
+    "0x80000000001719AF",
+    "--scan-timeout",
+    "1",
+    "--timeout",
+    "1",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-09-29T22:31:48.013567-03:00",
+  "ended_at": "2026-09-29T22:31:51.399862-03:00",
+  "duration_seconds": 3.386291,
+  "exit_code": 0,
+  "interrupted": false,
+  "spawn_error": null,
+  "log": "commands/20260929T223148-0300-05-nucleo-info-bluepill-b.log"
+}

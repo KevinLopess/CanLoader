@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "test": "03-activity-1-nucleo",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "canloader",
+    "activity",
+    "--interface",
+    "slcan",
+    "--channel",
+    "/dev/cu.usbmodem2074318558421",
+    "--bitrate",
+    "500000",
+    "--address",
+    "0x81",
+    "--name",
+    "0x80000000001663E2",
+    "--scan-timeout",
+    "1",
+    "--timeout",
+    "1",
+    "--verbose"
+  ],
+  "cwd": "/Users/kevinlopes/Projects/TCC/CanLoader",
+  "started_at": "2026-09-29T22:29:55.922707-03:00",
+  "ended_at": "2026-09-29T22:29:59.330621-03:00",
+  "duration_seconds": 3.407978,
+  "exit_code": 0,
+  "interrupted": false,
+  "spawn_error": null,
+  "log": "commands/20260929T222955-0300-03-activity-1-nucleo.log"
+}

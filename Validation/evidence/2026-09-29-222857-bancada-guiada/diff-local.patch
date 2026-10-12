@@ -1,0 +1,771 @@
+diff --git a/TestApplication/Makefile b/TestApplication/Makefile
+index f3fce54..a8aa039 100644
+--- a/TestApplication/Makefile
++++ b/TestApplication/Makefile
+@@ -11,14 +11,14 @@ CC := $(TOOLCHAIN)gcc
+ OBJCOPY := $(TOOLCHAIN)objcopy
+ SIZE := $(TOOLCHAIN)size
+ 
+-COMMON_INCLUDES := \
++COMMON_INCLUDES := -ICommon \
+ 	-I$(PROJECT_ROOT)/Application/Inc \
+ 	-I$(PROJECT_ROOT)/Config \
+ 	-I$(PROJECT_ROOT)/Portable/Inc \
+ 	-I$(PROJECT_ROOT)/Protocol/Inc \
+ 	-I$(PROJECT_ROOT)/Drivers/CMSIS/Include
+ 
+-COMMON_C_SOURCES := \
++COMMON_C_SOURCES := Common/app_activity.c \
+ 	$(PROJECT_ROOT)/Application/Src/boot_device_config.c \
+ 	$(PROJECT_ROOT)/Application/Src/boot_metadata.c \
+ 	$(PROJECT_ROOT)/Protocol/Src/boot_crc32.c \
+diff --git a/TestApplication/README.md b/TestApplication/README.md
+index d8ddb47..ad1144e 100644
+--- a/TestApplication/README.md
++++ b/TestApplication/README.md
+@@ -57,8 +57,13 @@ Depois de configurar GPIO, a aplicação:
+ 5. inicia a FSM de Address Claim, que coloca o primeiro Address Claimed na
+    fila de transmissão;
+ 6. configura SysTick a 1 ms;
+-7. entra no laço cooperativo com `WFI`; nesse laço, transmite a fila, processa
+-   a janela de arbitragem de 250 ms, atende a rede e atualiza o LED.
++7. entra no laço cooperativo com recepção por polling contínuo; nesse laço,
++   transmite a fila, processa a janela de arbitragem de 250 ms, atende até
++   oito frames recebidos por passagem e atualiza o LED.
++
++O laço não usa `WFI`: esperar o próximo SysTick atrasava o atendimento do FIFO
++quando chegavam rajadas. O polling contínuo aumenta o uso de CPU; a aplicação
++de teste não foi projetada para baixo consumo.
+ 
+ O filtro bxCAN da aplicação aceita qualquer data frame extended e rejeita
+ frames standard/RTR. Os módulos de protocolo validam PGN, destino, DLC e campos
+@@ -132,12 +137,90 @@ O LED ativo-baixo em PC13 repete continuamente:
+ 1. ligado por 80 ms;
+ 2. desligado por 100 ms;
+ 3. ligado por 80 ms;
+-4. desligado por 740 ms.
++4. nos 740 ms restantes, desligado, exceto pelos pulsos de recepção descritos abaixo.
+ 
+ O ciclo total é de 1 s. LED continuamente aceso significa que `main()` recebeu
+ `PRIMASK!=0`; isso indica falha no contrato de handoff e deve ser tratado como
+ erro, não como execução normal da aplicação.
+ 
++## Comunicação periódica e diagnóstico
++
++As duas variantes enviam uma mensagem a cada 100 ms enquanto o endereço está
++reivindicado e não há reset solicitado. Cada placa transmite por iniciativa
++própria, sem responder à mensagem periódica com outra mensagem. O período não
++representa garantia de entrega: a arbitragem e a fila podem atrasar o envio.
++
++O módulo comum `Common/app_activity.c` usa CAN clássico, identificador estendido,
++PGN Proprietary B `0xFFFF` escolhido para este ensaio e prioridade 7, inferior à
++das mensagens de gerenciamento da implementação. O payload tem oito bytes:
++
++| Bytes | Conteúdo |
++|---|---|
++| 0–1 | assinatura ASCII `CL` |
++| 2 | versão `1` |
++| 3 | target: `0xF1` para F103C8 ou `0xB1` para G0B1RE |
++| 4–7 | sequência de 32 bits em little-endian, iniciada em zero |
++
++Só são contadas mensagens com PGN, tamanho, assinatura, versão e target válidos,
++originadas de outro SA válido. Essa verificação não autentica o emissor. Uma
++mensagem só entra na fila quando não há outra pendente; se a fila estiver
++ocupada, a tentativa é contada e o envio fica para o próximo período, sem rajada
++para compensar atrasos. A sequência avança a cada enfileiramento bem-sucedido.
++
++As duas piscadas de 80 ms continuam indicando execução local. Entre 350 e
++999 ms de cada ciclo de um segundo, uma recepção válida acende o LED por até
++35 ms. Recepções próximas podem unir os pulsos. Sem mensagens válidas de outra
++placa, permanece apenas a dupla piscada. O mesmo comportamento vale para PC13
++na Blue Pill e PA5 na NUCLEO-G0B1RE.
++
++Atualize a ferramenta Python no ambiente em que usa `canloader`, a partir da
++raiz do repositório, e grave a aplicação correspondente em pelo menos duas
++placas:
++
++```sh
++python3 -m pip install -e Tools/canloader
++```
++
++Com as aplicações executando, consulte cada dispositivo pelo SA e NAME obtidos
++em `canloader ls`. Exemplo para o endereço `0x80`:
++
++```sh
++canloader activity --interface slcan --channel /dev/cu.usbmodem2074318558421 \
++  --bitrate 500000 --address 0x80 --name 0x80000000000E30EA \
++  --scan-timeout 1 --timeout 1
++```
++
++A consulta usa seletores INFO opcionais `0x80..0x89`. O bootloader e aplicações
++anteriores não oferecem esses contadores; o comando informa essa condição.
++Os comandos existentes, como `info`, continuam usando seus seletores habituais.
++
++| Campo | Interpretação |
++|---|---|
++| TX queued | mensagens aceitas pela fila; não confirma transmissão nem entrega |
++| RX valid peer heartbeats | mensagens periódicas válidas recebidas de outros SAs |
++| TX skipped | tentativas adiadas por fila ocupada |
++| Last peer / sequence / age | origem, sequência e idade da última recepção válida |
++| RX FIFO overrun observations | vezes em que o software observou o indicador de perda no FIFO |
++| TEC / REC e estado CAN | contadores e flags de erro lidos do controlador no momento da consulta |
++
++Os contadores ficam em RAM e reiniciam a cada início da aplicação. As leituras
++são sequenciais, não uma fotografia simultânea. O contador de overrun não mede
++exatamente quantos frames foram perdidos. A última origem não é uma lista dos
++pares; consulte todas as placas para verificar recepção em cada uma. Duplicatas
++válidas também contam como recepção. Nenhuma recepção é representada por SA
++`0xFF` e idade `0xFFFFFFFF`; a ferramenta apresenta essa condição em texto.
++
++Para avaliar uma atualização com tráfego concorrente, mantenha duas placas
++executando estas aplicações e atualize a terceira. Registre `activity` antes e
++depois, além do log completo do update e do CRC verificado. Durante a execução
++do bootloader, o alvo para de emitir mensagens periódicas; com `--run`, volta
++a emiti-las quando a nova aplicação inicia. As outras placas continuam gerando
++tráfego. Não abra dois comandos simultaneamente na mesma porta SLCAN.
++
++O envio periódico permite esse ensaio, mas não comprova por si só estabilidade
++elétrica ou atualização sob qualquer carga. A alteração no polling da Blue Pill
++também não estabelece a causa da instabilidade observada na bancada.
++
+ ## Build
+ 
+ Com GNU Arm Embedded Toolchain no `PATH`, a partir da raiz do repositório:
+diff --git a/TestApplication/Targets/stm32f103c8/Src/main_stm32f103c8.c b/TestApplication/Targets/stm32f103c8/Src/main_stm32f103c8.c
+index e11c369..9690192 100644
+--- a/TestApplication/Targets/stm32f103c8/Src/main_stm32f103c8.c
++++ b/TestApplication/Targets/stm32f103c8/Src/main_stm32f103c8.c
+@@ -2,6 +2,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include "app_activity.h"
+ #include "boot_can.h"
+ #include "boot_config.h"
+ #include "boot_crc32.h"
+@@ -29,15 +30,8 @@
+ #define BXCAN_IDE_BIT              UINT32_C(0x04)
+ #define BXCAN_RTR_BIT              UINT32_C(0x02)
+ 
+-typedef enum
+-{
+-    BLINK_FIRST_ON,
+-    BLINK_FIRST_OFF,
+-    BLINK_SECOND_ON,
+-    BLINK_PAUSE
+-} blink_phase_t;
+-
+ static volatile uint32_t system_tick_ms;
++static app_activity_t activity;
+ static boot_device_config_t device_config;
+ static boot_j1939_address_claim_t address_claim;
+ static boot_j1939_tp_rx_t tp_receiver;
+@@ -391,6 +385,11 @@ static bool can_send_frame(const boot_can_frame_t *frame)
+     return true;
+ }
+ 
++static bool enqueue_activity(const boot_can_frame_t *frame)
++{
++    return (tx_count == 0U) && queue_frame(frame);
++}
++
+ static void flush_tx(void)
+ {
+     if ((tx_count > 0U) && can_send_frame(&tx_queue[tx_head]))
+@@ -433,6 +432,11 @@ static bool can_receive_frame(boot_can_frame_t *frame)
+         return false;
+     }
+ 
++    if ((CAN1->RF0R & CAN_RF0R_FOVR0) != 0U)
++    {
++        ++activity.rx_overruns;
++        CAN1->RF0R = CAN_RF0R_FOVR0;
++    }
+     rir = CAN1->sFIFOMailBox[0].RIR;
+     rdtr = CAN1->sFIFOMailBox[0].RDTR;
+     write_u32_le(&frame->data[0], CAN1->sFIFOMailBox[0].RDLR);
+@@ -482,6 +486,16 @@ static uint32_t capability_word(void)
+            ((uint32_t)BOOT_TARGET_CODE << 24U);
+ }
+ 
++static uint32_t activity_can_status(void)
++{
++    const uint32_t esr = CAN1->ESR;
++    /* TEC[7:0], REC[15:8], bus-off[16], passive[17], warning[18]. */
++    return ((esr >> 16U) & 0xFFU) | ((esr >> 16U) & 0xFF00U) |
++           ((esr & CAN_ESR_BOFF) ? (1UL << 16U) : 0U) |
++           ((esr & CAN_ESR_EPVF) ? (1UL << 17U) : 0U) |
++           ((esr & CAN_ESR_EWGF) ? (1UL << 18U) : 0U);
++}
++
+ static bool info_value(uint8_t selector, uint32_t *value)
+ {
+     boot_metadata_t metadata;
+@@ -492,6 +506,15 @@ static bool info_value(uint8_t selector, uint32_t *value)
+     {
+         return false;
+     }
++    if (selector == APP_INFO_CAN_STATUS)
++    {
++        *value = activity_can_status();
++        return true;
++    }
++    if (app_activity_info(&activity, selector, system_tick_ms, value))
++    {
++        return true;
++    }
+     switch ((boot_info_selector_t)selector)
+     {
+         case BOOT_INFO_CAPABILITIES:
+@@ -702,6 +725,11 @@ static void dispatch_can(const boot_can_frame_t *frame)
+ {
+     boot_j1939_header_t header;
+ 
++    if (app_activity_receive(&activity, frame, local_address(), system_tick_ms))
++    {
++        return;
++    }
++
+     (void)boot_j1939_address_claim_handle(&address_claim,
+                                            frame,
+                                            system_tick_ms);
+@@ -754,7 +782,7 @@ static void service_network(void)
+     collect_claim_tx();
+     service_tp();
+     flush_tx();
+-    while (can_receive_frame(&frame))
++    for (uint8_t budget = 0U; (budget < 8U) && can_receive_frame(&frame); ++budget)
+     {
+         dispatch_can(&frame);
+         if (tx_count >= APP_TX_QUEUE_CAPACITY)
+@@ -772,8 +800,6 @@ void SysTick_Handler(void)
+ 
+ int main(void)
+ {
+-    blink_phase_t phase;
+-    uint32_t deadline;
+     bool can_ready;
+ 
+     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+@@ -791,6 +817,7 @@ int main(void)
+         }
+     }
+ 
++    app_activity_init(&activity, system_tick_ms);
+     boot_device_config_load(&device_config);
+     boot_j1939_address_claim_init(&address_claim,
+                                   device_config.name,
+@@ -815,10 +842,6 @@ int main(void)
+                     SysTick_CTRL_TICKINT_Msk |
+                     SysTick_CTRL_ENABLE_Msk;
+ 
+-    phase = BLINK_FIRST_ON;
+-    led_on();
+-    deadline = system_tick_ms + 80U;
+-
+     for (;;)
+     {
+         const uint32_t now = system_tick_ms;
+@@ -826,6 +849,12 @@ int main(void)
+         if (can_ready)
+         {
+             service_network();
++            app_activity_service(&activity, system_tick_ms, local_address(),
++                                  BOOT_TARGET_CODE,
++                                  !boot_reset_pending &&
++                                  boot_j1939_address_claim_is_operational(&address_claim),
++                                  enqueue_activity);
++            flush_tx();
+         }
+         if (boot_reset_pending &&
+             ((((CAN1->TSR & (CAN_TSR_RQCP0 | CAN_TSR_TXOK0)) ==
+@@ -837,33 +866,15 @@ int main(void)
+             request_bootloader_reset();
+         }
+ 
+-        if ((int32_t)(now - deadline) >= 0)
++        if (app_activity_led_on(&activity, now))
+         {
+-            switch (phase)
+-            {
+-                case BLINK_FIRST_ON:
+-                    led_off();
+-                    phase = BLINK_FIRST_OFF;
+-                    deadline += 100U;
+-                    break;
+-                case BLINK_FIRST_OFF:
+-                    led_on();
+-                    phase = BLINK_SECOND_ON;
+-                    deadline += 80U;
+-                    break;
+-                case BLINK_SECOND_ON:
+-                    led_off();
+-                    phase = BLINK_PAUSE;
+-                    deadline += 740U;
+-                    break;
+-                case BLINK_PAUSE:
+-                default:
+-                    led_on();
+-                    phase = BLINK_FIRST_ON;
+-                    deadline += 80U;
+-                    break;
+-            }
++            led_on();
++        }
++        else
++        {
++            led_off();
+         }
+-        __WFI();
++        /* Poll continuously: WFI with only SysTick delayed draining bxCAN
++         * by up to 1 ms and could lose bursts in the three-frame FIFO. */
+     }
+ }
+diff --git a/TestApplication/Targets/stm32g0b1re/Src/main_stm32g0b1re.c b/TestApplication/Targets/stm32g0b1re/Src/main_stm32g0b1re.c
+index f61c9ab..68a6a8d 100644
+--- a/TestApplication/Targets/stm32g0b1re/Src/main_stm32g0b1re.c
++++ b/TestApplication/Targets/stm32g0b1re/Src/main_stm32g0b1re.c
+@@ -2,6 +2,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include "app_activity.h"
+ #include "boot_can.h"
+ #include "boot_config.h"
+ #include "boot_device_config.h"
+@@ -20,14 +21,7 @@
+ 
+ FDCAN_HandleTypeDef hfdcan1;
+ 
+-typedef enum
+-{
+-    BLINK_FIRST_ON,
+-    BLINK_FIRST_OFF,
+-    BLINK_SECOND_ON,
+-    BLINK_PAUSE
+-} blink_phase_t;
+-
++static app_activity_t activity;
+ static boot_device_config_t device_config;
+ static boot_j1939_address_claim_t address_claim;
+ static boot_j1939_tp_rx_t tp_receiver;
+@@ -130,6 +124,11 @@ static bool queue_frame(const boot_can_frame_t *frame)
+     return true;
+ }
+ 
++static bool enqueue_activity(const boot_can_frame_t *frame)
++{
++    return (tx_count == 0U) && queue_frame(frame);
++}
++
+ static void flush_tx(void)
+ {
+     if ((tx_count > 0U) &&
+@@ -187,6 +186,21 @@ static uint32_t capability_word(void)
+            ((uint32_t)BOOT_TARGET_CODE << 24U);
+ }
+ 
++static uint32_t activity_can_status(void)
++{
++    FDCAN_ErrorCountersTypeDef counters = {0};
++    FDCAN_ProtocolStatusTypeDef status = {0};
++    if ((HAL_FDCAN_GetErrorCounters(&hfdcan1, &counters) != HAL_OK) ||
++        (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &status) != HAL_OK))
++    {
++        return UINT32_MAX;
++    }
++    return (counters.TxErrorCnt & 0xFFU) | ((counters.RxErrorCnt & 0xFFU) << 8U) |
++           (status.BusOff ? (1UL << 16U) : 0U) |
++           (status.ErrorPassive ? (1UL << 17U) : 0U) |
++           (status.Warning ? (1UL << 18U) : 0U);
++}
++
+ static bool info_value(uint8_t selector, uint32_t *value)
+ {
+     boot_metadata_t metadata;
+@@ -197,6 +211,15 @@ static bool info_value(uint8_t selector, uint32_t *value)
+     {
+         return false;
+     }
++    if (selector == APP_INFO_CAN_STATUS)
++    {
++        *value = activity_can_status();
++        return true;
++    }
++    if (app_activity_info(&activity, selector, HAL_GetTick(), value))
++    {
++        return true;
++    }
+     switch ((boot_info_selector_t)selector)
+     {
+         case BOOT_INFO_CAPABILITIES:
+@@ -400,6 +423,11 @@ static void dispatch_can(const boot_can_frame_t *frame, uint32_t now)
+ {
+     boot_j1939_header_t header;
+ 
++    if (app_activity_receive(&activity, frame, local_address(), now))
++    {
++        return;
++    }
++
+     (void)boot_j1939_address_claim_handle(&address_claim, frame, now);
+     apply_claim_address_change();
+     collect_claim_tx();
+@@ -448,8 +476,6 @@ static void service_network(uint32_t now)
+ 
+ int main(void)
+ {
+-    blink_phase_t phase = BLINK_FIRST_ON;
+-    uint32_t deadline;
+     bool can_ready;
+ 
+     HAL_Init();
+@@ -468,6 +494,7 @@ int main(void)
+     }
+ 
+     (void)boot_flash_init();
++    app_activity_init(&activity, HAL_GetTick());
+     boot_device_config_load(&device_config);
+     boot_j1939_address_claim_init(&address_claim,
+                                   device_config.name,
+@@ -486,7 +513,6 @@ int main(void)
+     HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
+                       LED_BOOTLOADER_Pin,
+                       GPIO_PIN_SET);
+-    deadline = HAL_GetTick() + 80U;
+ 
+     for (;;)
+     {
+@@ -494,7 +520,17 @@ int main(void)
+ 
+         if (can_ready)
+         {
++            if ((hfdcan1.Instance->IR & FDCAN_IR_RF0L) != 0U)
++            {
++                ++activity.rx_overruns;
++                hfdcan1.Instance->IR = FDCAN_IR_RF0L;
++            }
+             service_network(now);
++            app_activity_service(&activity, now, local_address(), BOOT_TARGET_CODE,
++                                  !boot_reset_pending &&
++                                  boot_j1939_address_claim_is_operational(&address_claim),
++                                  enqueue_activity);
++            flush_tx();
+         }
+         if (boot_reset_pending &&
+             ((((int32_t)(now - boot_reset_deadline) >= 0) &&
+@@ -505,41 +541,9 @@ int main(void)
+             boot_platform_reset();
+         }
+ 
+-        if ((int32_t)(now - deadline) >= 0)
+-        {
+-            switch (phase)
+-            {
+-                case BLINK_FIRST_ON:
+-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
+-                                      LED_BOOTLOADER_Pin,
+-                                      GPIO_PIN_RESET);
+-                    phase = BLINK_FIRST_OFF;
+-                    deadline += 100U;
+-                    break;
+-                case BLINK_FIRST_OFF:
+-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
+-                                      LED_BOOTLOADER_Pin,
+-                                      GPIO_PIN_SET);
+-                    phase = BLINK_SECOND_ON;
+-                    deadline += 80U;
+-                    break;
+-                case BLINK_SECOND_ON:
+-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
+-                                      LED_BOOTLOADER_Pin,
+-                                      GPIO_PIN_RESET);
+-                    phase = BLINK_PAUSE;
+-                    deadline += 740U;
+-                    break;
+-                case BLINK_PAUSE:
+-                default:
+-                    HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port,
+-                                      LED_BOOTLOADER_Pin,
+-                                      GPIO_PIN_SET);
+-                    phase = BLINK_FIRST_ON;
+-                    deadline += 80U;
+-                    break;
+-            }
+-        }
++        HAL_GPIO_WritePin(LED_BOOTLOADER_GPIO_Port, LED_BOOTLOADER_Pin,
++                          app_activity_led_on(&activity, now) ?
++                          GPIO_PIN_SET : GPIO_PIN_RESET);
+     }
+ }
+ 
+diff --git a/Tests/c/Makefile b/Tests/c/Makefile
+index 5ad00af..8b0b813 100644
+--- a/Tests/c/Makefile
++++ b/Tests/c/Makefile
+@@ -2,7 +2,7 @@ ROOT := ../..
+ BUILD_DIR ?= $(ROOT)/build/tests/c
+ CC ?= cc
+ 
+-CPPFLAGS += -I$(ROOT)/Config \
++CPPFLAGS += -I$(ROOT)/TestApplication/Common -I$(ROOT)/Config \
+             -I$(ROOT)/Portable/Inc \
+             -I$(ROOT)/Protocol/Inc \
+             -I$(ROOT)/Application/Inc
+@@ -12,7 +12,8 @@ SANITIZER_FLAGS ?=
+ CFLAGS += $(SANITIZER_FLAGS)
+ LDFLAGS += $(SANITIZER_FLAGS)
+ 
+-PROGRAMS := $(BUILD_DIR)/test_protocol \
++PROGRAMS := $(BUILD_DIR)/test_app_activity \
++            $(BUILD_DIR)/test_protocol \
+             $(BUILD_DIR)/test_j1939_address_claim \
+             $(BUILD_DIR)/test_j1939_tp \
+             $(BUILD_DIR)/test_device_config_v2 \
+@@ -29,6 +30,11 @@ all: $(PROGRAMS)
+ $(BUILD_DIR):
+ 	mkdir -p $@
+ 
++$(BUILD_DIR)/test_app_activity: test_app_activity.c \
++                                 $(ROOT)/TestApplication/Common/app_activity.c \
++                                 $(ROOT)/Protocol/Src/boot_j1939.c | $(BUILD_DIR)
++	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
++
+ $(BUILD_DIR)/test_protocol: test_protocol.c \
+                              $(ROOT)/Protocol/Src/boot_crc32.c \
+                              $(ROOT)/Protocol/Src/boot_j1939.c \
+@@ -94,6 +100,7 @@ $(BUILD_DIR)/test_metadata_image_g0: test_metadata_image.c \
+ 	$(CC) $(CPPFLAGS) -DBOOT_TARGET_STM32G0B1RE $(CFLAGS) $^ $(LDFLAGS) -o $@
+ 
+ check: all
++	$(BUILD_DIR)/test_app_activity
+ 	$(BUILD_DIR)/test_protocol
+ 	$(BUILD_DIR)/test_j1939_address_claim
+ 	$(BUILD_DIR)/test_j1939_tp
+diff --git a/Tests/python/test_cli.py b/Tests/python/test_cli.py
+index c770211..47b6887 100644
+--- a/Tests/python/test_cli.py
++++ b/Tests/python/test_cli.py
+@@ -141,3 +141,35 @@ def test_serial_backends_receive_bitrates_but_socketcan_does_not(monkeypatch) ->
+     assert calls[1]["tty_baudrate"] == 2000000
+     assert calls[2]["bitrate"] is None
+     assert calls[2]["tty_baudrate"] is None
++
++
++@pytest.mark.parametrize('peer, status', [(0x81, 0x70102), (0xFF, 0xFFFFFFFF)])
++def test_activity_output_distinguishes_reception_and_queueing(
++    monkeypatch, capsys, peer, status
++) -> None:
++    class FakeClient:
++        address = 0x80
++        target_name = J1939Name(0x8000000000001234)
++
++        def read_activity(self):
++            return dict(tx_queued=20, rx_valid=12, tx_skipped=3,
++                        last_rx_address=peer, last_rx_sequence=7,
++                        last_rx_age_ms=42, rx_overruns=2,
++                        can_status=status, period_ms=100)
++
++    monkeypatch.setattr(cli, '_open_from_args', lambda *a: DummyContextBus())
++    monkeypatch.setattr(cli, '_client_from_args', lambda *a: FakeClient())
++    cli._run_command(cli.build_parser().parse_args(['activity']))
++    output = capsys.readouterr().out
++    assert 'TX queued (not delivery-confirmed): 20' in output
++    assert 'RX valid peer heartbeats: 12' in output
++    assert 'RX FIFO overrun observations: 2' in output
++    if peer == 0xFF:
++        assert 'none received since application start' in output
++        assert 'CAN error status: unavailable' in output
++        assert 'Last peer age:' not in output
++    else:
++        assert 'Last peer: 0x81' in output
++        assert 'Last peer age: 42 ms' in output
++        assert 'TEC=2 REC=1' in output
++        assert 'bus_off=True error_passive=True warning=True' in output
+diff --git a/Tests/python/test_client.py b/Tests/python/test_client.py
+index 1ac2fca..7163b67 100644
+--- a/Tests/python/test_client.py
++++ b/Tests/python/test_client.py
+@@ -973,3 +973,48 @@ def test_matching_control_nack_is_mapped() -> None:
+     client = make_client(FakeBus(responder), device, target_name=device.name)
+     with pytest.raises(NackError, match="current state"):
+         client.identify()
++
++
++class ActivityDevice(V2Device):
++    activity_version = 1
++    legacy = False
++
++    def handle(self, frame, bus):
++        identifier = identifier_from_frame(frame)
++        if (identifier.pgn == PGN_PROPRIETARY_A
++                and identifier.destination_address == self.address):
++            request = decode_control_request(frame)
++            if request.command == Command.INFO and request.parameter >= 0x80:
++                if self.legacy:
++                    self._queue_response(bus, request, NackCode.INVALID_COMMAND,
++                                         kind=ResponseKind.NACK)
++                else:
++                    value = (self.activity_version if request.parameter == 0x80
++                             else request.parameter)
++                    self._queue_response(bus, request, value)
++                return
++        super().handle(frame, bus)
++
++
++def test_activity_reads_optional_counters_without_mutating_device() -> None:
++    device = ActivityDevice(application_running=True)
++    result = make_client(device_bus(device), device).read_activity()
++    assert result == dict(zip(
++        ['tx_queued', 'rx_valid', 'tx_skipped', 'last_rx_address',
++         'last_rx_sequence', 'last_rx_age_ms', 'rx_overruns', 'can_status', 'period_ms'],
++        range(0x81, 0x8A), strict=True))
++    assert set(device.commands) <= {Command.IDENTIFY, Command.INFO}
++    assert device.dm14_commands == []
++
++
++@pytest.mark.parametrize('mode, message', [
++    ('bootloader', 'require the test application'),
++    ('legacy', 'install the updated test application'),
++    ('version', 'unsupported activity protocol version'),
++])
++def test_activity_reports_incompatible_firmware(mode, message) -> None:
++    device = ActivityDevice(application_running=mode != 'bootloader')
++    device.legacy = mode == 'legacy'
++    device.activity_version = 2 if mode == 'version' else 1
++    with pytest.raises(ProtocolError, match=message):
++        make_client(device_bus(device), device).read_activity()
+diff --git a/Tools/canloader/README.md b/Tools/canloader/README.md
+index ab507d7..0c85dcd 100644
+--- a/Tools/canloader/README.md
++++ b/Tools/canloader/README.md
+@@ -123,3 +123,21 @@ python -m pytest -q Tests/python
+ A suíte cobre vetores de ID/NAME, Address Claim e arbitragem, TP/BAM/RTS-CTS,
+ DM14/DM15/DM16 byte a byte, identidade do alvo, duas ECUs simultâneas, CLI e
+ adaptação `python-can`/SLCAN.
++
++## Atividade CAN da aplicação de teste
++
++O comando `canloader activity` consulta os contadores opcionais da aplicação de
++teste atualizada. Aceita as mesmas opções de interface, canal, SA e NAME de
++`info`. Por exemplo:
++
++```sh
++canloader activity --interface socketcan --channel can0 \
++  --address 0x80 --name 0x8000000000123456
++```
++
++Mostra mensagens enfileiradas, recepções válidas de outros dispositivos,
++tentativas adiadas, última origem e indicadores de erro do controlador CAN.
++Enfileiramento não confirma entrega. Os contadores reiniciam com a aplicação
++e são consultados sequencialmente. O bootloader e aplicações antigas não
++implementam essa extensão. Consulte o [roteiro da aplicação de teste](../../TestApplication/README.md#comunicação-periódica-e-diagnóstico)
++para gravar as imagens, interpretar os LEDs e ensaiar atualização com tráfego.
+diff --git a/Tools/canloader/canloader/cli.py b/Tools/canloader/canloader/cli.py
+index 73a6c35..cb4ece7 100644
+--- a/Tools/canloader/canloader/cli.py
++++ b/Tools/canloader/canloader/cli.py
+@@ -132,6 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
+     )
+ 
+     subparsers.add_parser("info", parents=[common], help="read bootloader information")
++    subparsers.add_parser(
++        "activity", parents=[common], help="read test-application CAN activity counters"
++    )
+ 
+     update = subparsers.add_parser(
+         "update", parents=[common], help="transfer and verify a firmware image"
+@@ -257,6 +260,32 @@ def _run_command(args: argparse.Namespace) -> None:
+             print(f"Stored image size: {info.stored_size} bytes")
+             print(f"Stored image CRC: 0x{info.stored_crc:08X}")
+             print(f"Device UID: {info.uid}")
++        elif args.command == "activity":
++            stats = client.read_activity()
++            print(f"Address: 0x{client.address:02X}")
++            print(f"NAME: {client.target_name}")
++            print(f"Heartbeat period: {stats['period_ms']} ms")
++            print(f"TX queued (not delivery-confirmed): {stats['tx_queued']}")
++            print(f"RX valid peer heartbeats: {stats['rx_valid']}")
++            print(f"TX skipped (queue busy): {stats['tx_skipped']}")
++            print(f"RX FIFO overrun observations: {stats['rx_overruns']}")
++            if stats['last_rx_address'] == 0xFF:
++                print("Last peer: none received since application start")
++            else:
++                print(f"Last peer: 0x{stats['last_rx_address']:02X}")
++                print(f"Last peer sequence: {stats['last_rx_sequence']}")
++                print(f"Last peer age: {stats['last_rx_age_ms']} ms")
++            status = stats['can_status']
++            if status == 0xFFFFFFFF:
++                print("CAN error status: unavailable")
++            else:
++                print(f"CAN errors: TEC={status & 0xFF} REC={(status >> 8) & 0xFF}")
++                print(
++                    f"CAN state: bus_off={bool(status & (1 << 16))} "
++                    f"error_passive={bool(status & (1 << 17))} "
++                    f"warning={bool(status & (1 << 18))}"
++                )
++            print("Counters reset at application start; fields are sampled sequentially.")
+         elif args.command == "update":
+             assert image is not None
+             result = client.update(image, run=args.run, progress=_Progress())
+diff --git a/Tools/canloader/canloader/client.py b/Tools/canloader/canloader/client.py
+index ed85742..e9c1fac 100644
+--- a/Tools/canloader/canloader/client.py
++++ b/Tools/canloader/canloader/client.py
+@@ -621,6 +621,34 @@ class BootloaderClient(_RawEndpoint):
+             query=True,
+         )
+ 
++    def read_activity(self) -> dict[str, int]:
++        """Read sequential, volatile counters from the optional test application."""
++        if not self.info(InfoSelector.CAPABILITIES) & CAPABILITY_APPLICATION_RUNNING:
++            raise ProtocolError("activity counters require the test application to be running")
++        try:
++            version = self.info(InfoSelector.ACTIVITY_VERSION)
++        except NackError as exc:
++            if exc.code in (NackCode.INVALID_COMMAND, NackCode.UNSUPPORTED_OPERATION):
++                raise ProtocolError(
++                    "this application does not support activity counters; "
++                    "install the updated test application"
++                ) from exc
++            raise
++        if version != 1:
++            raise ProtocolError(f"unsupported activity protocol version {version}")
++        fields = {
++            "tx_queued": InfoSelector.ACTIVITY_TX_QUEUED,
++            "rx_valid": InfoSelector.ACTIVITY_RX_VALID,
++            "tx_skipped": InfoSelector.ACTIVITY_TX_SKIPPED,
++            "last_rx_address": InfoSelector.ACTIVITY_LAST_RX_ADDRESS,
++            "last_rx_sequence": InfoSelector.ACTIVITY_LAST_RX_SEQUENCE,
++            "last_rx_age_ms": InfoSelector.ACTIVITY_LAST_RX_AGE_MS,
++            "rx_overruns": InfoSelector.ACTIVITY_RX_OVERRUNS,
++            "can_status": InfoSelector.ACTIVITY_CAN_STATUS,
++            "period_ms": InfoSelector.ACTIVITY_PERIOD_MS,
++        }
++        return {key: self.info(selector) for key, selector in fields.items()}
++
+     def read_device_info(self) -> DeviceInfo:
+         self._prepare_target()
+         assert self.target_name is not None
+diff --git a/Tools/canloader/canloader/constants.py b/Tools/canloader/canloader/constants.py
+index a90d1ae..ecd63b2 100644
+--- a/Tools/canloader/canloader/constants.py
++++ b/Tools/canloader/canloader/constants.py
+@@ -101,6 +101,17 @@ class InfoSelector(IntEnum):
+     NAME_HIGH = 9
+     SOURCE_ADDRESS = 10
+     FLASH_ERASE_UNIT_SIZE = 11
++    # Optional test-application INFO extension; not implemented by bootloader.
++    ACTIVITY_VERSION = 0x80
++    ACTIVITY_TX_QUEUED = 0x81
++    ACTIVITY_RX_VALID = 0x82
++    ACTIVITY_TX_SKIPPED = 0x83
++    ACTIVITY_LAST_RX_ADDRESS = 0x84
++    ACTIVITY_LAST_RX_SEQUENCE = 0x85
++    ACTIVITY_LAST_RX_AGE_MS = 0x86
++    ACTIVITY_RX_OVERRUNS = 0x87
++    ACTIVITY_CAN_STATUS = 0x88
++    ACTIVITY_PERIOD_MS = 0x89
+ 
+ 
+ class Dm14Command(IntEnum):

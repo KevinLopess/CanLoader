@@ -1,0 +1,19 @@
+{
+  "inicio": "2026-09-29T22:28:57.568671-03:00",
+  "commit": "2ff3de6bce6269537919420d454942e2e7a2596d",
+  "revisao_residente": "não confirmada",
+  "fase": "descoberta e consultas",
+  "relato_autor": "Duas Blue Pill e uma NUCLEO-G0B1RE. Funcionalidades relatadas como testadas; interrupção deixa alvo no bootloader. Tipo de interrupção ainda a confirmar. Aplicação precisa implementar retorno remoto.",
+  "binarios_locais_nao_confirmados_na_bancada": [
+    {
+      "arquivo": "build/stm32g0b1re/test-application/canloader_test_app.bin",
+      "bytes": 14204,
+      "sha256": "a0dc535553bbc1e73d3c213ccf79de78228708582bb7fb701696bca2e7cb5934"
+    },
+    {
+      "arquivo": "build/stm32f103c8/test-application/canloader_test_app.bin",
+      "bytes": 7776,
+      "sha256": "5006281a8573edc83370a4f68a4beec426b1ae50a525b45f3a5e158b8bf591e7"
+    }
+  ]
+}
