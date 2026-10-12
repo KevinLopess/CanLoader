@@ -1,0 +1,5 @@
+   text	   data	    bss	    dec	    hex	filename
+  18956	     12	   1704	  20672	   50c0	/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-30-071952-software-para-monografia/artefatos/stm32g0b1re/bootloader/CanLoader.elf
+  14192	     12	   1456	  15660	   3d2c	/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-30-071952-software-para-monografia/artefatos/stm32g0b1re/test-application/canloader_test_app.elf
+  16536	     12	   1648	  18196	   4714	/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-30-071952-software-para-monografia/artefatos/stm32f103c8/bootloader/CanLoader.elf
+   7772	      4	   1328	   9104	   2390	/Users/kevinlopes/Projects/TCC/CanLoader/Validation/evidence/2026-09-30-071952-software-para-monografia/artefatos/stm32f103c8/test-application/canloader_test_app.elf

@@ -1,0 +1,26 @@
+[
+  {
+    "arquivo": "artefatos/stm32f103c8/bootloader/CanLoader.bin",
+    "bytes": 16548,
+    "sha256": "731a5b26472e84ad22cd6a8ef9bfe302a97b3f52b52b03a78eb45da61bed38eb",
+    "crc": "0xFDA8FC19"
+  },
+  {
+    "arquivo": "artefatos/stm32f103c8/test-application/canloader_test_app.bin",
+    "bytes": 7776,
+    "sha256": "5006281a8573edc83370a4f68a4beec426b1ae50a525b45f3a5e158b8bf591e7",
+    "crc": "0x62443C8D"
+  },
+  {
+    "arquivo": "artefatos/stm32g0b1re/bootloader/CanLoader.bin",
+    "bytes": 18968,
+    "sha256": "e62bb6e9ba895a34b770e1a5ab6b2e6e4e3c3487fd77387ba664666a04e23b3f",
+    "crc": "0xDD69C1FA"
+  },
+  {
+    "arquivo": "artefatos/stm32g0b1re/test-application/canloader_test_app.bin",
+    "bytes": 14204,
+    "sha256": "a0dc535553bbc1e73d3c213ccf79de78228708582bb7fb701696bca2e7cb5934",
+    "crc": "0x1835F363"
+  }
+]

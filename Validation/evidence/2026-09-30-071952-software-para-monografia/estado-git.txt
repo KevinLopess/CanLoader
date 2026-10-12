@@ -1,0 +1,18 @@
+ M .settings/language.settings.xml
+ M TestApplication/Makefile
+ M TestApplication/README.md
+ M TestApplication/Targets/stm32f103c8/Src/main_stm32f103c8.c
+ M TestApplication/Targets/stm32g0b1re/Src/main_stm32g0b1re.c
+ M Tests/c/Makefile
+ M Tests/python/test_cli.py
+ M Tests/python/test_client.py
+ M Tools/canloader/README.md
+ M Tools/canloader/canloader/cli.py
+ M Tools/canloader/canloader/client.py
+ M Tools/canloader/canloader/constants.py
+?? TestApplication/Common/
+?? Tests/c/test_app_activity.c
+?? Validation/evidence/2026-09-29-222857-bancada-guiada/
+?? Validation/evidence/2026-09-29-223947-interrupcao-ferramenta/
+?? Validation/evidence/2026-09-29-224258-interrupcao-alimentacao/
+?? Validation/evidence/2026-09-29-224751-interrupcao-usb/

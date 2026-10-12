@@ -1,0 +1,27 @@
+sh Tests/check_portability.sh
+check_portability: OK (common core has no STM32 HAL/LL/device dependency)
+/Applications/Xcode.app/Contents/Developer/usr/bin/make -C Tests/c check
+../../build/tests/c/test_app_activity
+test_app_activity: OK
+../../build/tests/c/test_protocol
+test_protocol: OK
+../../build/tests/c/test_j1939_address_claim
+test_j1939_address_claim: OK
+../../build/tests/c/test_j1939_tp
+test_j1939_tp: OK
+../../build/tests/c/test_device_config_v2
+test_device_config_v2: OK
+../../build/tests/c/test_device_config_g0
+test_device_config_v2: OK
+../../build/tests/c/test_bootloader
+bootloader v2 tests: OK
+../../build/tests/c/test_bootloader_g0
+bootloader v2 tests: OK
+../../build/tests/c/test_metadata_image
+test_metadata_image: OK
+../../build/tests/c/test_metadata_image_g0
+test_metadata_image: OK
+PYTHONPATH=Tools/canloader .venv/bin/python -m pytest -q Tests/python
+........................................................................ [ 83%]
+..............                                                           [100%]
+86 passed in 1.20s
