@@ -1,0 +1,107 @@
+{
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231310-0300-F103-parcial-01.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.27,
+    "throughput_bytes_per_s": 6122
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231330-0300-F103A-parcial-02.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.266,
+    "throughput_bytes_per_s": 6140
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231338-0300-F103A-parcial-03.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.209,
+    "throughput_bytes_per_s": 6434
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231346-0300-F103A-parcial-04.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.261,
+    "throughput_bytes_per_s": 6169
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231353-0300-F103A-parcial-05.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.248,
+    "throughput_bytes_per_s": 6230
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231401-0300-G0B1-parcial-01.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.956,
+    "throughput_bytes_per_s": 7260
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231410-0300-G0B1-parcial-02.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.883,
+    "throughput_bytes_per_s": 7542
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231418-0300-G0B1-parcial-03.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.848,
+    "throughput_bytes_per_s": 7684
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231426-0300-G0B1-parcial-04.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.938,
+    "throughput_bytes_per_s": 7330
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231435-0300-G0B1-parcial-05.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.866,
+    "throughput_bytes_per_s": 7613
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231443-0300-F103B-parcial-01.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.246,
+    "throughput_bytes_per_s": 6241
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231451-0300-F103B-parcial-02.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.28,
+    "throughput_bytes_per_s": 6076
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231459-0300-F103B-parcial-03.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.265,
+    "throughput_bytes_per_s": 6146
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231507-0300-F103B-parcial-04.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.274,
+    "throughput_bytes_per_s": 6102
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231514-0300-F103B-parcial-05.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.247,
+    "throughput_bytes_per_s": 6234
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231540-0300-F103B-regiao-01.log": {
+    "size_bytes": 44032,
+    "start_to_verify_s": 5.972,
+    "throughput_bytes_per_s": 7373
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231552-0300-F103B-regiao-02.log": {
+    "size_bytes": 44032,
+    "start_to_verify_s": 5.983,
+    "throughput_bytes_per_s": 7360
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231605-0300-F103B-regiao-03.log": {
+    "size_bytes": 44032,
+    "start_to_verify_s": 5.93,
+    "throughput_bytes_per_s": 7426
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231618-0300-F103B-restaura.log": {
+    "size_bytes": 7776,
+    "start_to_verify_s": 1.241,
+    "throughput_bytes_per_s": 6264
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231643-0300-G0B1-regiao-01.log": {
+    "size_bytes": 489472,
+    "start_to_verify_s": 62.577,
+    "throughput_bytes_per_s": 7822
+  },
+  "Validation/evidence/2026-11-04-tempo-apagamento/commands/20261104T231841-0300-G0B1-restaura.log": {
+    "size_bytes": 14204,
+    "start_to_verify_s": 1.887,
+    "throughput_bytes_per_s": 7527
+  }
+}

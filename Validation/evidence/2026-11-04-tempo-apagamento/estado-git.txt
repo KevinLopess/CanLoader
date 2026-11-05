@@ -1,0 +1,12 @@
+9fe46d54cdc12d1b0df28b558bcbd696d4dfdfe0
+ M .settings/language.settings.xml
+ M Makefile
+ M TestApplication/Common/app_activity.c
+ M TestApplication/Common/app_activity.h
+ M TestApplication/Makefile
+ M TestApplication/README.md
+ M Tests/c/Makefile
+ M Tests/c/test_app_activity.c
+?? Validation/erase_timing.py
+?? Validation/evidence/2026-11-04-tempo-apagamento/
+?? Validation/run_timestamped_canloader.py
