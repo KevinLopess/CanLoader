@@ -37,11 +37,21 @@ build/stm32f103c8/bootloader/CanLoader.elf
 build/stm32g0b1re/bootloader/CanLoader.elf
 ```
 
-O comando **Project > Build Project** usa a configuração gerenciada do projeto
-original e compila somente o STM32F103C8Tx. Para o STM32G0B1RE, use o segundo
-comando `make` acima. Os fontes e drivers do G0 estão excluídos das configurações
-gerenciadas `Debug` e `Release` do F103 para impedir a mistura das duas
-plataformas.
+O builder gerenciado do CubeIDE também compila os dois targets. Escolha a
+configuração no menu do martelo (**Project > Build Configurations > Set
+Active**):
+
+| Configuração | MCU | Saída |
+| --- | --- | --- |
+| `Debug_stm32f103c8` | STM32F103C8Tx | `Debug_stm32f103c8/CanLoader.elf` |
+| `Release_stm32f103c8` | STM32F103C8Tx | `Release_stm32f103c8/CanLoader.elf` |
+| `Debug_stm32g0b1re` | STM32G0B1RETx | `Debug_stm32g0b1re/CanLoader.elf` |
+| `Release_stm32g0b1re` | STM32G0B1RETx | `Release_stm32g0b1re/CanLoader.elf` |
+
+Cada configuração exclui os fontes, drivers e `Portable` do outro target para
+impedir a mistura das duas plataformas. As configurações `.launch` continuam
+carregando o ELF gerado pelo `make`; para depurar um ELF do builder gerenciado,
+altere o campo **C/C++ Application** na aba **Main**.
 
 ## 3. Selecionar o ST-LINK
 
@@ -90,8 +100,8 @@ caminho mostrado na aba **Main** antes de pressionar **Debug**.
   target correspondente.
 - **Erros `HAL_FDCAN_*` durante um build do F103**: execute **Project > Clean**,
   atualize o projeto com **Refresh** e compile novamente. Esse erro indica que o
-  diretório `Debug` ainda contém arquivos gerados antes da exclusão dos fontes do
-  STM32G0.
+  diretório de saída da configuração ainda contém arquivos gerados antes da
+  exclusão dos fontes do STM32G0.
 - **No ST-LINK detected**: confira cabo USB, alimentação, driver e firmware do
   probe.
 - **Target not found**: reduza a frequência SWD e mantenha **Connect under

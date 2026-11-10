@@ -1,7 +1,10 @@
 # STM32CubeIDE generated output
 /Debug/
 /Release/
+/Debug_*/
+/Release_*/
 /build/
+/.settings/
 
 # Generated embedded artifacts
 *.elf
