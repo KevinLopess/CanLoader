@@ -12,6 +12,20 @@
 #define APP_ACTIVITY_VERSION 1U
 #define APP_ACTIVITY_RX_PULSE_MS UINT32_C(35)
 
+/* Build-time test image selector, so bench images differ by eye:
+ * image 1 keeps the original double blink, image 2 keeps the LED solid on
+ * and image 3 blinks three times per second. */
+#ifndef APP_VARIANT
+#define APP_VARIANT 1U
+#endif
+#if (APP_VARIANT < 1) || (APP_VARIANT > 3)
+#error "APP_VARIANT must be between 1 and 3"
+#endif
+#define APP_LED_SOLID (APP_VARIANT == 2U)
+/* Pulses are 80 ms on every 180 ms; peer pulses start 90 ms after the last. */
+#define APP_LED_PULSES ((APP_VARIANT == 3U) ? 3U : 2U)
+#define APP_LED_RX_START_MS ((APP_LED_PULSES * 180U) - 10U)
+
 typedef enum
 {
     APP_INFO_ACTIVITY_VERSION = 0x80,

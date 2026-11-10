@@ -2,6 +2,8 @@ PROJECT := CanLoader
 TARGET_ORIGIN := $(origin TARGET)
 TARGET ?= stm32f103c8
 BUILD_ROOT ?= build
+APP_VARIANT ?= 1
+TEST_APP_DIR := test-application$(if $(filter-out 1,$(APP_VARIANT)),-$(APP_VARIANT))
 SUPPORTED_TARGETS := $(patsubst Targets/%/target.mk,%,$(wildcard Targets/*/target.mk))
 TARGET_BUILD_GOALS := $(addprefix build-,$(SUPPORTED_TARGETS))
 STM32_GNU_BIN ?= $(firstword \
@@ -82,8 +84,8 @@ $(BUILD_DIR)/%.o: %.s
 	$(CC) $(ASFLAGS) -c $< -o $@
 
 test-application:
-	$(MAKE) -C TestApplication TARGET=$(TARGET) \
-		BUILD_DIR=$(abspath $(BUILD_ROOT)/$(TARGET)/test-application) \
+	$(MAKE) -C TestApplication TARGET=$(TARGET) APP_VARIANT=$(APP_VARIANT) \
+		BUILD_DIR=$(abspath $(BUILD_ROOT)/$(TARGET)/$(TEST_APP_DIR)) \
 		TOOLCHAIN=$(TOOLCHAIN_PREFIX) all
 
 check-portability:

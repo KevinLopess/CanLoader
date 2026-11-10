@@ -19,6 +19,7 @@ static void test_exchange_and_validation(void)
     app_activity_t a, b;
     boot_j1939_header_t header;
     uint32_t value;
+    const uint32_t rx_at = APP_LED_RX_START_MS + 50U;
     app_activity_init(&a, 0);
     app_activity_init(&b, 0);
     calls = 0;
@@ -30,12 +31,13 @@ static void test_exchange_and_validation(void)
     assert(header.pgn == 0xFFFF && header.priority == 7);
     assert(header.source_address == 0x80 && !header.destination_specific);
     assert(!app_activity_receive(&a, &sent, 0x80, 100));
-    assert(app_activity_receive(&b, &sent, 0x81, 400));
+    assert(app_activity_receive(&b, &sent, 0x81, rx_at));
     assert(b.rx_valid == 1 && b.last_rx_sequence == 0);
     assert(b.last_rx_address == 0x80);
-    assert(app_activity_led_on(&b, 400));
-    assert(!app_activity_led_on(&b, 435));
-    assert(app_activity_info(&b, APP_INFO_LAST_RX_AGE_MS, 700, &value));
+    assert(app_activity_led_on(&b, rx_at));
+    assert(APP_LED_SOLID ==
+           app_activity_led_on(&b, rx_at + APP_ACTIVITY_RX_PULSE_MS));
+    assert(app_activity_info(&b, APP_INFO_LAST_RX_AGE_MS, rx_at + 300U, &value));
     assert(value == 300);
     assert(app_activity_info(&a, APP_INFO_LAST_RX_AGE_MS, 700, &value));
     assert(value == UINT32_MAX);
@@ -101,11 +103,23 @@ static void test_wrap_and_local_led(void)
     assert(app_activity_info(&state, APP_INFO_LAST_RX_AGE_MS, 5, &value));
     assert(value == 15);
     app_activity_init(&state, 0);
-    assert(app_activity_led_on(&state, 0));
-    assert(!app_activity_led_on(&state, 80));
-    assert(app_activity_led_on(&state, 180));
-    assert(!app_activity_led_on(&state, 260));
-    assert(!app_activity_led_on(&state, 500));
+    if (APP_LED_SOLID)
+    {
+        for (uint32_t t = 0; t < 2000U; ++t)
+        {
+            assert(app_activity_led_on(&state, t));
+        }
+        return;
+    }
+    for (uint32_t pulse = 0; pulse < APP_LED_PULSES; ++pulse)
+    {
+        assert(app_activity_led_on(&state, pulse * 180U));
+        assert(app_activity_led_on(&state, (pulse * 180U) + 79U));
+        assert(!app_activity_led_on(&state, (pulse * 180U) + 80U));
+    }
+    assert(!app_activity_led_on(&state, APP_LED_PULSES * 180U));
+    assert(!app_activity_led_on(&state, 999));
+    assert(app_activity_led_on(&state, 1000));
 }
 
 int main(void)
@@ -113,6 +127,6 @@ int main(void)
     test_exchange_and_validation();
     test_backpressure_claim_and_reset();
     test_wrap_and_local_led();
-    puts("test_app_activity: OK");
+    printf("test_app_activity (variant %u): OK\n", (unsigned)APP_VARIANT);
     return 0;
 }

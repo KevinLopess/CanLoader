@@ -75,10 +75,13 @@ bool app_activity_receive(app_activity_t *state, const boot_can_frame_t *frame,
 bool app_activity_led_on(const app_activity_t *state, uint32_t now)
 {
     const uint32_t phase = now % 1000U;
-    /* Local execution: two pulses at the beginning of each second.
+    /* Local execution: APP_LED_PULSES pulses at the beginning of each second,
+     * or always on in the solid image, which shows no peer reception.
      * Peer reception: short pulses only in the rest of that second. */
-    return (phase < 80U) || ((phase >= 180U) && (phase < 260U)) ||
-           ((phase >= 350U) && state->rx_seen &&
+    return APP_LED_SOLID ||
+           (phase < 80U) || ((phase >= 180U) && (phase < 260U)) ||
+           ((APP_LED_PULSES > 2U) && (phase >= 360U) && (phase < 440U)) ||
+           ((phase >= APP_LED_RX_START_MS) && state->rx_seen &&
             ((uint32_t)(now - state->last_rx_ms) < APP_ACTIVITY_RX_PULSE_MS));
 }
 

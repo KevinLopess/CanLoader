@@ -143,6 +143,26 @@ O ciclo total é de 1 s. LED continuamente aceso significa que `main()` recebeu
 `PRIMASK!=0`; isso indica falha no contrato de handoff e deve ser tratado como
 erro, não como execução normal da aplicação.
 
+### Variantes da imagem de teste
+
+Para trocar de imagem em bancada e confirmar visualmente qual delas está
+executando, o build aceita `APP_VARIANT` (padrão `1`). Apenas o padrão do LED
+muda; o restante do código é idêntico.
+
+| Variante | Padrão local do LED | Pulsos de recepção | Diretório de saída |
+|---|---|---|---|
+| 1 | 2 piscadas (original) | 350–999 ms | `build/<target>/test-application/` |
+| 2 | aceso continuamente | não exibidos | `build/<target>/test-application-2/` |
+| 3 | 3 piscadas | 530–999 ms | `build/<target>/test-application-3/` |
+
+Cada piscada dura 80 ms, com 100 ms apagado entre elas. Na variante 2, o LED
+aceso também é o sinal de falha de handoff (`PRIMASK!=0`); para distinguir os
+dois casos, confirme por `canloader ls`/`info` que a aplicação responde na
+rede, o que não ocorre na falha. A variante 1 gera o mesmo binário de antes da
+introdução de `APP_VARIANT`, preservando o CRC dos ensaios registrados. Como as
+imagens diferem, `canloader info` e `verify` também as distinguem pelo CRC.
+Valores fora de 1..3 interrompem a compilação.
+
 ## Comunicação periódica e diagnóstico
 
 As duas variantes enviam uma mensagem a cada 100 ms enquanto o endereço está
@@ -170,7 +190,9 @@ para compensar atrasos. A sequência avança a cada enfileiramento bem-sucedido.
 As duas piscadas de 80 ms continuam indicando execução local. Entre 350 e
 999 ms de cada ciclo de um segundo, uma recepção válida acende o LED por até
 35 ms. Recepções próximas podem unir os pulsos. Sem mensagens válidas de outra
-placa, permanece apenas a dupla piscada. O mesmo comportamento vale para PC13
+placa, permanece apenas a dupla piscada. Na variante 3, a janela de recepção
+começa mais tarde; na variante 2, a recepção não aparece no LED (ver a tabela
+de variantes acima). O mesmo comportamento vale para PC13
 na Blue Pill e PA5 na NUCLEO-G0B1RE.
 
 Atualize a ferramenta Python no ambiente em que usa `canloader`, a partir da
@@ -235,16 +257,24 @@ Para a NUCLEO-G0B1RE:
 make TARGET=stm32g0b1re test-application
 ```
 
+Para a segunda imagem de teste, com LED aceso continuamente:
+
+```sh
+make APP_VARIANT=2 test-application
+make TARGET=stm32g0b1re APP_VARIANT=2 test-application
+```
+
 Ou diretamente neste diretório:
 
 ```sh
 make
 make TARGET=stm32g0b1re
+make APP_VARIANT=2
 ```
 
 Um único `Makefile` inclui a configuração correspondente em `Targets/<target>/target.mk`.
 Todos os artefatos seguem o padrão `build/<target>/test-application/` na raiz
-do repositório:
+do repositório (`test-application-<N>/` para `APP_VARIANT=N` diferente de 1):
 
 | Arquivo | Uso |
 |---|---|
@@ -307,7 +337,8 @@ específicos estão em [STM32G0B1RE.md](../Docs/STM32G0B1RE.md).
 Após um update completo:
 
 - `canloader verify` retorna o mesmo CRC do `.bin`;
-- `canloader run` inicia o padrão de duas piscadas;
+- `canloader run` inicia o padrão de piscadas da variante gravada (duas na
+  variante 1);
 - `canloader ls` mostra o mesmo NAME e o modo `application`;
 - `canloader info` informa a base, o máximo e a unidade de apagamento do target,
   além de

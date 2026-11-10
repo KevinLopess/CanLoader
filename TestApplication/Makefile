@@ -1,7 +1,8 @@
 APP_NAME := canloader_test_app
 PROJECT_ROOT := ..
 TARGET ?= stm32f103c8
-BUILD_DIR ?= $(PROJECT_ROOT)/build/$(TARGET)/test-application
+APP_VARIANT ?= 1
+BUILD_DIR ?= $(PROJECT_ROOT)/build/$(TARGET)/test-application$(if $(filter-out 1,$(APP_VARIANT)),-$(APP_VARIANT))
 
 STM32_GNU_BIN ?= $(firstword \
 	$(wildcard $(HOME)/apps/stm32cubeide/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin) \
@@ -32,6 +33,7 @@ ifeq ($(wildcard $(TARGET_CONFIG)),)
 $(error Unsupported TARGET '$(TARGET)'; missing TestApplication/$(TARGET_CONFIG))
 endif
 include $(TARGET_CONFIG)
+DEFINES += -DAPP_VARIANT=$(APP_VARIANT)U
 
 CFLAGS := $(CPU_FLAGS) -std=c11 -Os -g3 \
 	-ffreestanding -fno-builtin -ffunction-sections -fdata-sections \

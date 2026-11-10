@@ -13,6 +13,8 @@ CFLAGS += $(SANITIZER_FLAGS)
 LDFLAGS += $(SANITIZER_FLAGS)
 
 PROGRAMS := $(BUILD_DIR)/test_app_activity \
+            $(BUILD_DIR)/test_app_activity_v2 \
+            $(BUILD_DIR)/test_app_activity_v3 \
             $(BUILD_DIR)/test_protocol \
             $(BUILD_DIR)/test_j1939_address_claim \
             $(BUILD_DIR)/test_j1939_tp \
@@ -34,6 +36,16 @@ $(BUILD_DIR)/test_app_activity: test_app_activity.c \
                                  $(ROOT)/TestApplication/Common/app_activity.c \
                                  $(ROOT)/Protocol/Src/boot_j1939.c | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+$(BUILD_DIR)/test_app_activity_v2: test_app_activity.c \
+                                    $(ROOT)/TestApplication/Common/app_activity.c \
+                                    $(ROOT)/Protocol/Src/boot_j1939.c | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) -DAPP_VARIANT=2U $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+$(BUILD_DIR)/test_app_activity_v3: test_app_activity.c \
+                                    $(ROOT)/TestApplication/Common/app_activity.c \
+                                    $(ROOT)/Protocol/Src/boot_j1939.c | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) -DAPP_VARIANT=3U $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(BUILD_DIR)/test_protocol: test_protocol.c \
                              $(ROOT)/Protocol/Src/boot_crc32.c \
@@ -101,6 +113,8 @@ $(BUILD_DIR)/test_metadata_image_g0: test_metadata_image.c \
 
 check: all
 	$(BUILD_DIR)/test_app_activity
+	$(BUILD_DIR)/test_app_activity_v2
+	$(BUILD_DIR)/test_app_activity_v3
 	$(BUILD_DIR)/test_protocol
 	$(BUILD_DIR)/test_j1939_address_claim
 	$(BUILD_DIR)/test_j1939_tp
