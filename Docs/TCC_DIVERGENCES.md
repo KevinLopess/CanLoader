@@ -18,14 +18,14 @@ transforma automaticamente o projeto em produto certificado SAE.
 | Tema do TCC | Situação atual | Evidência/limite |
 |---|---|---|
 | bootloader via CAN | implementado | update completo por CAN clássico a 500 kbit/s |
-| STM32F103/Blue Pill | implementado como primeiro target | HAL/CMSIS/linker específicos; hardware ainda precisa de ensaio documentado |
-| NUCLEO-G0B1RE | port implementado | build, linker, FDCAN, Flash e aplicação de referência; validação física pendente |
+| STM32F103/Blue Pill | implementado como primeiro target | HAL/CMSIS/linker específicos; ensaiado em duas Blue Pill em 25/08, 29–30/09 e 04/11/2026 |
+| NUCLEO-G0B1RE | port implementado | build, linker, FDCAN, Flash e aplicação de referência; ensaiado em bancada em 29–30/09 e 04/11/2026, com a cobertura descrita em [STM32G0B1RE.md](STM32G0B1RE.md) |
 | separação hardware/protocolo | implementado | `Portable/Inc`, ports STM32F1/STM32G0 e módulos de protocolo independentes |
 | J1939 de 29 bits | implementado no framing | CAN EFF, PGN, PDU1/PDU2 e prioridade 6 |
 | gestão de nós J1939 | implementado como perfil | NAME, Request, Address Claimed, disputa, Cannot Claim e Commanded Address |
 | DM14/DM15/DM16 | implementado como subset | ERASE/WRITE/STATUS/close; sem READ, EDCP ou seed-key |
 | transporte multipacket | implementado | TP RTS/CTS para DM16; BAM para Commanded Address |
-| múltiplos dispositivos | suportado logicamente | scanner por NAME, resolução de SA e bloqueio do alvo; ensaio físico multinó ainda necessário |
+| múltiplos dispositivos | implementado e ensaiado | scanner por NAME, resolução de SA e bloqueio do alvo; três placas no mesmo barramento, cada uma atualizada com as outras transmitindo (29/09/2026) |
 | entrada remota no bootloader | implementado | aplicação v2, backup registers e janela de 10 s |
 | integridade da imagem | implementado | CRC-32/ISO-HDLC, metadata e vetores |
 | não executar imagem parcial | implementado | marker `UPDATING/INVALID` antes do jump |
@@ -33,7 +33,7 @@ transforma automaticamente o projeto em produto certificado SAE.
 | segurança/autenticidade | não implementado | sem assinatura, MAC, criptografia ou anti-rollback |
 | portabilidade a outro MCU | demonstrada em código para dois alvos | F103 e G0B1RE compilam; não implica suporte automático a outros STM32 |
 | diferentes bitrates/CAN FD | não implementado | CAN clássico fixo em 500 kbit/s |
-| validação experimental | procedimento disponível | resultados precisam ser executados e anexados |
+| validação experimental | realizada em parte | registros em `Validation/evidence/`; estado por ensaio na Seção 22 de [VALIDATION.md](VALIDATION.md) |
 
 ## 3. O que “atende à parte J1939” significa
 
@@ -117,9 +117,10 @@ O mapa concreto v2 é:
 - 43 KiB de aplicação;
 - 1 KiB de metadata.
 
-Na medição desta árvore, o build integrado ocupa 16468 bytes de Flash
-(`text=16456`, `data=12`) e deixa 2988 bytes, aproximadamente 15,4%, na região
-de código. Esse valor é uma fotografia do build; o linker de 19 KiB é o
+Na versão `v1.0.0`, compilada em 30 de setembro de 2026, o bootloader ocupa
+16548 bytes de Flash (`text=16536`, `data=12`) e deixa 2908 bytes,
+aproximadamente 14,9%, na região de código. No STM32G0B1RE, ocupa 18968 dos
+30720 bytes. Esses valores são uma fotografia do build; o linker de 19 KiB é o
 requisito. O custo de
 J1939/TP/claim reduziu a aplicação de 47 KiB no v1 histórico para 43 KiB no v2.
 
@@ -146,23 +147,27 @@ produção.
 
 ## 8. Evidências necessárias para o TCC II
 
-Além de testes automatizados, a entrega acadêmica deve registrar:
+Além de testes automatizados, a entrega acadêmica previa registrar os itens
+abaixo. A coluna de estado reflete as sessões de 25/08, 29–30/09 e 04/11/2026.
 
-1. diagrama físico, transceptores e terminação;
-2. captura de Address Claim e Request;
-3. conflito de dois preferred SA com NAMEs distintos;
-4. `canloader ls` mostrando múltiplos NAMEs;
-5. update de apenas um NAME e prova de que o outro não altera Flash;
-6. captura TP de um bloco de 100 bytes com duas janelas CTS;
-7. ERASE/WRITE/FINALIZE/VERIFY completos;
-8. interrupção de energia e recuperação;
-9. aplicação executando e comando remoto de retorno;
-10. Commanded Address e persistência após reset;
-11. erros de CRC, sequência, sessão e timeout;
-12. tamanho do binário, uso de RAM e tempo/throughput medidos.
+| Evidência | Estado |
+|---|---|
+| 1. diagrama físico, transceptores e terminação | registrado (foto e diagrama na monografia) |
+| 2. captura de Address Claim e Request | parcial: observados nos logs `--verbose` da CLI, sem captura independente |
+| 3. conflito de dois preferred SA com NAMEs distintos | observado em 04/11: a NUCLEO perdeu `0x80` para a Blue Pill de NAME menor e ficou em `0x81` |
+| 4. `canloader ls` mostrando múltiplos NAMEs | registrado (três NAMEs) |
+| 5. update de apenas um NAME e prova de que o outro não altera Flash | parcial: os outros participantes continuaram executando e transmitindo; a Flash deles não foi comparada |
+| 6. captura TP de um bloco de 100 bytes com duas janelas CTS | parcial: visível nos logs `--verbose`, sem captura independente |
+| 7. ERASE/WRITE/FINALIZE/VERIFY completos | registrado nos dois alvos |
+| 8. interrupção de energia e recuperação | registrado: uma ocorrência na Blue Pill A, durante a transferência, além de SIGKILL da ferramenta e desconexão USB |
+| 9. aplicação executando e comando remoto de retorno | registrado nos dois alvos |
+| 10. Commanded Address e persistência após reset | pendente |
+| 11. erros de CRC, sequência, sessão e timeout | parcial: testes automatizados; em bancada, só MSP nulo (25/08) e NAME divergente |
+| 12. tamanho do binário, uso de RAM e tempo/throughput medidos | registrado (30/09 e 04/11; tempos com instantes do computador) |
 
-Até essa sessão ser executada, a formulação correta é: “builds e testes sem
-hardware foram executados; validação física permanece pendente”.
+A formulação correta é: a atualização dirigida, o retorno remoto e a
+recuperação por novo envio foram demonstrados em bancada nas condições
+ensaiadas; os itens parciais e pendentes acima continuam sem evidência física.
 
 ## 9. Referências e transparência
 

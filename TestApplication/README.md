@@ -328,9 +328,10 @@ canloader update \
   --address 0x80 --name 0x8000000000123456 --run --verbose
 ```
 
-O port G0 compila e seus contratos comuns são testados no host, mas a execução
-na NUCLEO-G0B1RE ainda precisa ser comprovada em bancada. A montagem e os testes
-específicos estão em [STM32G0B1RE.md](../Docs/STM32G0B1RE.md).
+O port G0 compila, seus contratos comuns são testados no host e a aplicação de
+referência foi atualizada e executada na NUCLEO-G0B1RE nos ensaios de bancada de
+29 e 30 de setembro de 2026. A montagem, o que foi ensaiado e o que ainda falta
+verificar estão em [STM32G0B1RE.md](../Docs/STM32G0B1RE.md).
 
 ## Critérios de aprovação
 

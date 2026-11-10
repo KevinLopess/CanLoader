@@ -61,16 +61,20 @@ configuração e filtros estendidos. O binário deixou de caber com margem segur
 nos 15 KiB de código anteriores. A partição foi então redimensionada para
 20 KiB: 19 KiB de código e 1 KiB de configuração.
 
-A medição integrada atual é:
+A medição da versão `v1.0.0`, compilada em 30 de setembro de 2026 e arquivada em
+`Validation/evidence/2026-09-30-071952-software-para-monografia/memoria.txt`, é:
 
 | Seção | Bytes |
 |---|---:|
-| `.text` e dados constantes reportados como text | 16456 |
+| `.text` e dados constantes reportados como text | 16536 |
 | `.data` em Flash/RAM | 12 |
 | `.bss` em RAM | 1648 |
-| ocupação Flash considerada (`text+data`) | 16468 |
+| ocupação Flash considerada (`text+data`) | 16548 |
 | capacidade da região de código | 19456 |
-| margem Flash | 2988 |
+| margem Flash | 2908 |
+
+No STM32G0B1RE, a mesma compilação mede `text=18956`, `data=12` e `bss=1704`:
+18968 bytes de Flash na região de código de 30720 bytes, com margem de 11752.
 
 Essa medição é informativa, não um limite congelado. O relatório de tamanho e
 o `.map` precisam ser arquivados novamente em cada build de liberação.

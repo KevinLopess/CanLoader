@@ -1,13 +1,16 @@
 # Plano de validação integrada do CanLoader
 
-> **A validação em hardware foi iniciada, mas permanece parcial.** A sessão de
-> 25 de agosto de 2026 está registrada em `Validation/evidence/`. Este documento
-> também define os ensaios restantes e não constitui certificado de aprovação
-> do sistema completo.
+> **A validação em hardware cobre parte dos ensaios definidos aqui.** As sessões
+> de 25 de agosto (preliminar, duas Blue Pill), 29 e 30 de setembro (três placas,
+> atualização dirigida, tráfego e interrupções) e 4 de novembro de 2026 (tempo de
+> apagamento e vazão útil) estão registradas em `Validation/evidence/`. A Seção
+> 22 resume o estado de cada ensaio. Este documento não constitui certificado de
+> aprovação do sistema completo.
 
-Esta campanha e suas evidências físicas atuais usam STM32F103C8Tx. O port
-NUCLEO-G0B1RE possui uma matriz adicional em [STM32G0B1RE.md](STM32G0B1RE.md) e
-não deve herdar resultados físicos do F103.
+Os testes A a O foram escritos para o STM32F103C8Tx. A NUCLEO-G0B1RE participou
+das sessões de setembro e novembro; o que foi ensaiado nela está em
+[STM32G0B1RE.md](STM32G0B1RE.md). Resultados de uma família não devem ser
+atribuídos à outra.
 
 ## 1. Objetivo
 
@@ -149,18 +152,19 @@ Cobertura mínima esperada:
 ### 4.1 Tamanho e mapa
 
 Registre `arm-none-eabi-size build/stm32f103c8/bootloader/CanLoader.elf`. A medição de
-referência desta revisão é:
+referência da versão `v1.0.0`, compilada em 30 de setembro de 2026, é:
 
 ```text
-text  = 16456 bytes
+text  = 16536 bytes
 data  =    12 bytes
 bss   =  1648 bytes
-Flash = text + data = 16468 bytes
+Flash = text + data = 16548 bytes
 RAM estática = data + bss = 1660 bytes
-margem na região de 19456 bytes = 2988 bytes (aprox. 15,4%)
+margem na região de 19456 bytes = 2908 bytes (aprox. 14,9%)
 ```
 
-Essa é uma fotografia da árvore usada para escrever este plano, não um valor
+Essa é uma fotografia da compilação arquivada em
+`Validation/evidence/2026-09-30-071952-software-para-monografia/`, não um valor
 contratual. O critério é não exceder 19456 bytes de carga em Flash e não
 sobrepor `0x08004C00`. Verifique no `.map` e nos ELF:
 
@@ -178,10 +182,11 @@ Critérios:
 - aplicação termina antes de `0x0800FC00`;
 - metadata não aparece no `.bin` de aplicação.
 
-Como referência adicional, a aplicação de teste desta árvore ocupa 7320 bytes
-carregáveis (`text=7316`, `data=4`), 1296 bytes de `bss` e 1300 bytes de RAM
-estática (`data+bss`); o critério continua sendo o limite do linker, não esse
-valor medido.
+Como referência adicional, a aplicação de teste da mesma compilação ocupa 7776
+bytes carregáveis (`text=7772`, `data=4`), 1328 bytes de `bss` e 1332 bytes de
+RAM estática (`data+bss`); o critério continua sendo o limite do linker, não esse
+valor medido. A aplicação de 7320 bytes citada na Seção 22 é a versão de agosto,
+anterior às mensagens periódicas.
 
 ## 5. Preparação do barramento
 
@@ -622,10 +627,14 @@ SLCAN/macOS para SocketCAN/Linux sem medir ambos.
 O tempo definido para a monografia começa no envio de `START_UPDATE` e termina
 na resposta bem-sucedida de `VERIFY`. A duração total do processo da CLI inclui
 Address Claim, descoberta e IDENTIFY, portanto não representa essa métrica. O
-log `--verbose` atual também não possui timestamp por quadro. Use uma captura
-CAN independente e temporizada para obter os dois instantes. No SLCAN, um
-segundo adaptador ou analisador deve atuar como tap, pois dois processos não
-podem consumir simultaneamente a mesma porta serial.
+log `--verbose` da CLI não possui timestamp por quadro. Na sessão de 4 de
+novembro de 2026, `Validation/run_timestamped_canloader.py` acrescentou o
+instante do computador a cada linha do log, e `Validation/throughput_timing.py`
+e `Validation/erase_timing.py` extraíram a vazão útil e o tempo de apagamento.
+Esses instantes incluem a latência do adaptador USB. Para medir no barramento,
+use uma captura CAN independente e temporizada; no SLCAN, um segundo adaptador
+ou analisador deve atuar como tap, pois dois processos não podem consumir
+simultaneamente a mesma porta serial.
 
 ## 21. TESTE O — dados residuais após imagem menor
 
@@ -654,27 +663,36 @@ Critérios:
 
 O estado `PARCIAL` identifica procedimentos iniciados cujos critérios ainda não
 foram completados. `BLOQUEADO` é reservado à parte que depende de equipamento,
-instrumentação ou condição externa indisponível. A sessão física citada abaixo
-não substitui os ensaios restantes. Nas linhas A a N, os caminhos abreviados partem de
-`Validation/evidence/2026-08-25-hardware-preflight/`.
+instrumentação ou condição externa indisponível. As sessões citadas abaixo não
+substituem os ensaios restantes. Os caminhos abreviados partem de
+`Validation/evidence/`, com estes prefixos:
+
+| Prefixo | Sessão |
+|---|---|
+| `AGO` | `2026-08-25-hardware-preflight/` (preliminar, duas Blue Pill) |
+| `GUI` | `2026-09-29-222857-bancada-guiada/` (três placas, atualização dirigida) |
+| `INT-F`, `INT-A`, `INT-U` | `2026-09-29-223947-interrupcao-ferramenta/`, `2026-09-29-224258-interrupcao-alimentacao/`, `2026-09-29-224751-interrupcao-usb/` |
+| `ID` | `2026-09-30-072122-identidade-divergente/` |
+| `SW` | `2026-09-30-071952-software-para-monografia/` |
+| `TEMPO` | `2026-11-04-tempo-apagamento/` |
 
 | Teste | Resultado | Evidência | Observações |
 |---|---|---|---|
-| quality gate/build | APROVADO | `Validation/evidence/2026-08-25-software-baseline/` | Build, seis executáveis C e 77 casos Python aprovados |
-| A — claim/framing | PARCIAL | `commands/20260825T073220-0300-can-scan.log` | Dois claims estendidos observados pela CLI; faltam captura independente e estado inicial sem aplicação |
-| B — INFO/identidade | PARCIAL | `commands/20260825T073230-0300-info-target-a.log`; `commands/20260825T073234-0300-info-target-b.log`; `commands/20260825T073509-0300-wrong-name-negative.log` | INFO e trava de NAME exercitados; sequência completa após erase/reset físico não foi executada |
-| C — update DM/TP | PARCIAL | `commands/20260825T073342-0300-target-a-update-normal.log`; `analysis/target-a-update-normal.json` | Uma atualização de 7320 bytes concluiu; faltam leitura SWD e observação do LED |
-| D — CRC | APROVADO | `commands/20260825T073459-0300-firmware-identification.log`; `commands/20260825T073342-0300-target-a-update-normal.log`; `commands/20260825T073401-0300-target-a-info-after-update.log`; `commands/20260825T073314-0300-target-a-verify-in-bootloader.log` | No bootloader residente, cuja revisão não foi confirmada, arquivo, update, VERIFY e INFO coincidiram em 7320 bytes e `0x7BB303AE` |
-| E — handoff/autoboot | PARCIAL | `commands/20260825T073316-0300-target-a-run-application.log`; `commands/20260825T073324-0300-can-scan-after-roundtrip.log` | Retorno ao modo aplicação observado; LED, reset físico e registradores não foram registrados |
-| F — aplicação/reboot | PARCIAL | `commands/20260825T073310-0300-target-a-reboot-to-bootloader.log`; `commands/20260825T073314-0300-target-a-verify-in-bootloader.log` | Reboot remoto e modo bootloader observados; janela completa de 10 s não foi caracterizada |
+| quality gate/build | APROVADO | `SW/` | Build dos dois alvos, controle de portabilidade, dez executáveis C e 86 casos Python aprovados em 30/09 (em 25/08, `2026-08-25-software-baseline/`: seis executáveis e 77 casos) |
+| A — claim/framing | PARCIAL | `AGO/commands/20260825T073220-0300-can-scan.log`; `GUI/commands/*-01-descoberta.log` | Claims estendidos de dois e depois três participantes observados pela CLI; faltam captura independente e estado inicial sem aplicação |
+| B — INFO/identidade | PARCIAL | `AGO/commands/20260825T073230-0300-info-target-a.log`; `GUI/commands/*-02-info-*.log`; `ID/` | INFO dos três alvos; associação divergente entre NAME e endereço recusada em 25/08 e 30/09; sequência completa após erase/reset físico não executada |
+| C — update DM/TP | PARCIAL | `AGO/commands/20260825T073342-0300-target-a-update-normal.log`; `GUI/commands/*-update-*.log` | Atualização dirigida das três placas (7776 e 14204 bytes) com CRC conferido; faltam leitura SWD e captura do barramento |
+| D — CRC | APROVADO | `AGO/commands/20260825T073459-0300-firmware-identification.log`; `GUI/RELATORIO.md` | Arquivo, update, VERIFY e INFO coincidiram em 25/08 (`0x7BB303AE`) e nos três alvos em 29/09 (`0x62443C8D`, `0x1835F363`); revisão residente do bootloader não confirmada por leitura independente |
+| E — handoff/autoboot | PARCIAL | `AGO/commands/20260825T073316-0300-target-a-run-application.log`; `GUI/commands/*-info-*.log` | RUN seguido de modo aplicação e mensagens periódicas nos três alvos; LED, reset físico com autoboot e registradores não foram registrados |
+| F — aplicação/reboot | PARCIAL | `AGO/commands/20260825T073310-0300-target-a-reboot-to-bootloader.log`; `GUI/commands/*-update-*.log` | Retorno remoto antes de cada atualização da rodada de 29/09, nos dois alvos; janela completa de 10 s não caracterizada |
 | G — Commanded Address | PENDENTE | | Nenhum endereço persistente foi alterado |
-| H — interrupção | PENDENTE | | Nenhum corte de alimentação foi realizado |
-| I — recuperação | PENDENTE | | Houve recuperação após imagem inválida, mas não após a interrupção definida no teste H |
-| J — erros | PARCIAL | `commands/20260825T073509-0300-wrong-name-negative.log`; `commands/20260825T073648-0300-target-a-update-invalid-msp.log`; `commands/20260825T073702-0300-target-a-run-invalid-negative.log` | MSP nulo e NAME divergente exercitados; matriz de frames e falhas permanece incompleta |
-| K — multinó dirigido | PARCIAL | `commands/20260825T073220-0300-can-scan.log`; `analysis/target-a-update-normal.json`; `commands/20260825T073404-0300-target-b-control-after-update.log` | Dois nós presentes e tráfego dirigido ao alvo A; não houve conflito inicial nem dump dos dois alvos |
+| H — interrupção | PARCIAL | `INT-A/`; `INT-F/`; `INT-U/` | Na Blue Pill A, corte de alimentação durante a transferência (5200/44032 bytes): mesmo NAME em modo bootloader, capabilities sem aplicação válida e RUN recusado com `INVALID_APPLICATION`. Encerramento da ferramenta por SIGKILL e desconexão USB do adaptador tiveram o mesmo desfecho. Faltam cortes durante apagamento e finalização, registro do LED e medição elétrica |
+| I — recuperação | PARCIAL | `INT-F/`; `INT-A/`; `INT-U/` | Após as três interrupções, novo envio integral de 7776 bytes, VERIFY com `0x62443C8D`, RUN e mensagens periódicas, sem SWD; autoboot após reset não registrado |
+| J — erros | PARCIAL | `AGO/commands/20260825T073648-0300-target-a-update-invalid-msp.log`; `AGO/commands/20260825T073702-0300-target-a-run-invalid-negative.log`; `ID/` | MSP nulo e NAME divergente exercitados em bancada; CRC incorreto só nos testes automatizados; matriz de frames e falhas permanece incompleta |
+| K — multinó dirigido | PARCIAL | `GUI/RELATORIO.md`; `TEMPO/RELATORIO.md` | Três nós; cada um atualizado com os outros dois transmitindo a cada 100 ms, TEC e REC zerados nas consultas; em 04/11, a NUCLEO disputou `0x80` e ficou em `0x81` por ter NAME maior. Faltam captura do reset simultâneo e leitura da Flash dos alvos não selecionados |
 | L — Cannot Claim | PENDENTE | | |
 | M — journal | PENDENTE | | |
-| N — desempenho | BLOQUEADO | `analysis/target-a-update-normal.json` | Há contagem de quadros, mas não havia captura externa com timestamps por quadro |
+| N — desempenho | PARCIAL | `TEMPO/vazao-util.json`; `TEMPO/tempos-apagamento.json`; `GUI/RELATORIO.md` | Duração total de 4,6 a 6,3 s; vazão útil de 6,1 a 7,8 kB/s e apagamento de cerca de 22 ms por página, com instantes do computador; faltam captura independente, utilização do barramento e bus-off |
 | O — dados residuais | BLOQUEADO | | A conexão SWD necessária à leitura da região estava indisponível |
 
 Somente marque “aprovado” com log/captura correspondente. Uma conclusão válida

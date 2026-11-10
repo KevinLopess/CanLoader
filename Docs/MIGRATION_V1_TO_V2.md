@@ -106,9 +106,10 @@ partição reservada ao bootloader aumentou de 16 para 20 KiB:
 | aplicação | `0x08004000`, 47 KiB | `0x08005000`, 43 KiB |
 | metadata | `0x0800FC00` | `0x0800FC00` |
 
-O build v2 medido usa `text=16456`, `data=12`, `bss=1648`; `text+data=16468`
-deixa 2988 bytes na região de código de 19456 bytes. A medida deve ser repetida
-a cada build de liberação.
+Na versão `v1.0.0`, compilada em 30 de setembro de 2026, o bootloader v2 usa
+`text=16536`, `data=12`, `bss=1648`; `text+data=16548` deixa 2908 bytes na
+região de código de 19456 bytes. A medida deve ser repetida a cada build de
+liberação.
 
 Consequência operacional: qualquer aplicação compilada para `0x08004000`
 precisa ser relinkada para `0x08005000`. O bootloader v2 rejeita seus vetores e

@@ -18,10 +18,22 @@
 | 2026-10-12 | `127418e` | Mensagens periódicas da aplicação de teste |
 | 2026-10-12 | `dd1e55f` | Comando `activity` na ferramenta |
 | 2026-10-12 | `1117f39`..`5ccc225` | Registros dos ensaios de 29 e 30 de setembro |
+| 2026-10-12 | `9fe46d5` | Organização do repositório e deste histórico |
+| 2026-11-05 | `40ca23f` | Medição do tempo de apagamento e da vazão útil (sessão de 4 de novembro) |
+| 2026-11-09 | `bc88391` | `APP_VARIANT` na aplicação de teste; a variante padrão mantém o binário ensaiado |
+| 2026-11-09 | `b272acc` | Configurações Debug e Release por alvo no CubeIDE |
+| 2026-11-09 | commit seguinte | Documentação atualizada com os resultados de bancada |
 
 As alterações dos commits de 2026-10-12 foram feitas e ensaiadas entre 7 e 30
 de setembro; o código commitado é idêntico ao registrado em
 `Validation/evidence/2026-09-30-071952-software-para-monografia/`.
+
+## Tag `v1.0.0`
+
+A tag `v1.0.0` marca a versão citada na monografia. Ela foi criada em `b272acc`
+e, em 9 de novembro de 2026, movida para o commit de documentação logo depois
+dele, que só altera arquivos Markdown. O firmware, a aplicação de teste na
+variante padrão e a ferramenta são os mesmos avaliados nos ensaios de bancada.
 
 ## Reescrita do histórico (2026-10-12)
 

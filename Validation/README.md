@@ -44,7 +44,8 @@ O diretório de destino não pode existir. Por padrão, o script usa
 - commit e estado dos diretórios de código;
 - versões do sistema, Python, dependências e toolchain;
 - saída integral do build;
-- saída integral das seis suítes C e da suíte Python;
+- saída integral dos sete programas de teste C (dez executáveis, pois três
+  deles também são compilados com a configuração do STM32G0) e da suíte Python;
 - cópias dos binários, com tamanho, SHA-256 e CRC-32;
 - mapas de ligação preservados como arquivos `.map.txt`;
 - seções dos arquivos ELF.

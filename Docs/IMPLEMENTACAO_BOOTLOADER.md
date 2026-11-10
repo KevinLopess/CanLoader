@@ -5,7 +5,7 @@
 | targets implementados | STM32F103C8Tx/Cortex-M3 e STM32G0B1RE/Cortex-M0+ |
 | protocolo on-wire | formato atual do CanLoader, exclusivamente |
 | enlace | CAN clássico, CEFF de 29 bits, 500 kbit/s |
-| estado da evidência | F103 com campanha HIL parcial; G0 com build/testes, HIL pendente |
+| estado da evidência | ensaios de bancada com duas Blue Pill e uma NUCLEO-G0B1RE (29–30/09 e 04/11/2026); cobertura parcial, ver [VALIDATION.md](VALIDATION.md#22-resultado-consolidado) |
 | fonte de verdade | código, linkers, testes e pacote Python deste repositório |
 
 ## 1. Finalidade, formato e estado
@@ -103,7 +103,8 @@ O bootloader deve:
 - READ remoto, DM18, EDCP ou seed-key;
 - provisionamento remoto do NAME de produção;
 - ports para famílias STM32 além de F1 e G0B1;
-- certificação SAE ou validação física já concluída.
+- certificação SAE ou validação física exaustiva; os ensaios realizados e seus
+  limites estão em [VALIDATION.md](VALIDATION.md).
 
 ## 3. Requisitos de construção
 
@@ -202,7 +203,7 @@ programação de 8 B, conforme o documento específico do port.
 | QUAL-01 | Compilar com warnings e testes C `-Werror`. | Makefiles |
 | QUAL-02 | Ter testes de wire format byte a byte em C e Python. | `Tests/c`, `Tests/python` |
 | QUAL-03 | Registrar limitações normativas e segurança. | documentação dedicada |
-| QUAL-04 | Não declarar hardware validado sem evidência. | plano de validação pendente |
+| QUAL-04 | Não declarar hardware validado sem evidência. | registros em `Validation/evidence/` e matriz da Seção 22 de VALIDATION.md |
 | QUAL-05 | Arquivar build, size/map, logs e captura CAN da versão liberada. | checklist e matriz HIL A–N |
 
 ## 4. Arquitetura de software
@@ -358,21 +359,21 @@ da aplicação é atualizada pelo CAN.
 O primeiro link integrado do v2 não cabia nos 15 KiB de código anteriores e
 reportou excesso de 516 bytes. O mapa passou a reservar 20 KiB totais ao
 bootloader, dos quais 19 KiB para código e 1 KiB para configuração. A medição
-do artefato final auditado é:
+da versão `v1.0.0`, compilada em 30 de setembro de 2026, é:
 
 ```text
-text=16456, data=12, bss=1648
-ocupação Flash text+data=16468
+text=16536, data=12, bss=1648
+ocupação Flash text+data=16548
 capacidade code=19456
-margem=2988 bytes (aprox. 15,4 %)
+margem=2908 bytes (aprox. 14,9 %)
 ```
 
 É uma fotografia do build, não promessa futura. Cada release precisa repetir
 `size`, conferir `.map` e as asserts do linker. Detalhes completos estão em
 [MEMORY_MAP.md](MEMORY_MAP.md).
 
-A aplicação de referência do mesmo build mede `text=7316`, `data=4` e
-`bss=1296`: 7320 bytes carregáveis na partição de 44032 bytes e 1300 bytes de
+A aplicação de referência do mesmo build mede `text=7772`, `data=4` e
+`bss=1328`: 7776 bytes carregáveis na partição de 44032 bytes e 1332 bytes de
 RAM estática contabilizada, incluindo sua reserva de stack.
 
 ## 7. Configuração persistente NAME/SA
@@ -1279,6 +1280,9 @@ o corte deve variar dentro da operação; desligar apenas entre comandos não te
 o compromisso transacional de metadata/journal. A perda de todas as cópias do
 close DM14 deve ser ensaiada separadamente e confirmar a limitação conhecida:
 INVALID_SEQUENCE e reinício do update, sem execução de imagem parcial.
+
+O estado de cada ensaio nas sessões de bancada já realizadas está na Seção 22 de
+[VALIDATION.md](VALIDATION.md#22-resultado-consolidado).
 
 ## 27. Segurança e limitações
 
