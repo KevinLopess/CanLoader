@@ -1,165 +1,121 @@
 # CanLoader
 
-CanLoader é um bootloader *single-slot* para atualização de firmware de
-microcontroladores STM32 por CAN clássico a 500 kbit/s. A lógica comum está
-separada dos ports de hardware e esta revisão possui dois alvos compiláveis:
-STM32F103C8Tx e NUCLEO-G0B1RE. O perfil CanLoader usa identificadores
-estendidos de 29 bits, NAME e Address Claiming J1939, TP RTS/CTS/BAM, um
-subconjunto de DM14/DM15/DM16 e um PGN Proprietary A para o ciclo de vida da
-imagem.
+Bootloader para microcontroladores STM32 que atualiza o firmware de **uma placa
+escolhida** em uma rede CAN compartilhada, enquanto as demais continuam em
+operação. A placa é selecionada pela identidade (NAME) do SAE J1939, e não por
+um endereço fixo; a imagem é transferida em blocos, gravada sem passar inteira
+pela RAM e só é executada depois de conferidos o tamanho, o CRC e os vetores de
+inicialização.
 
-Um formato preliminar com IDs de 11 bits foi descartado durante o
-desenvolvimento. Host, bootloader e aplicação de referência utilizam somente o
-formato atual, identificado internamente pelo valor `0x02`.
+O projeto reúne três programas:
 
-> **Escopo normativo:** o projeto implementa mecanismos de J1939-21/J1939-81 e
-> um perfil DM baseado em material público histórico de J1939-73. Ele não foi
-> certificado pela SAE e não deve ser apresentado como implementação integral
-> de J1939-73. Manifest, sessão, CRC e handoff são extensões CanLoader no PGN
-> Proprietary A `0xEF00`.
+- o **bootloader**, em C, residente no início da Flash de cada placa;
+- uma **aplicação de referência**, usada para exercitar a atualização e o
+  retorno remoto ao bootloader;
+- a **ferramenta `canloader`**, em Python, que descobre as placas e conduz a
+  atualização a partir do computador.
 
-## Estado atual
+Desenvolvido como Trabalho de Conclusão de Curso de Engenharia de Computação na
+UTFPR, Campus Pato Branco (2026). A versão [`v1.0.0`](https://github.com/KevinLopess/CanLoader/tree/v1.0.0)
+corresponde ao código avaliado na monografia.
 
-- ports para STM32F103C8Tx/bxCAN/Cortex-M3 e
-  STM32G0B1RE/FDCAN/Cortex-M0+;
-- CAN clássico, 500 kbit/s, quadros de dados estendidos de 29 bits;
-- preferred Source Address do target `0x80`; ferramenta de serviço `0xF9`;
-- NAME de desenvolvimento derivado deterministicamente do UID96 do STM32;
-- descoberta com Request/Address Claimed e identificação dirigida;
-- seleção segura do target por NAME, mesmo quando o Source Address muda;
-- atualização dirigida com DM14/DM15/DM16 e TP RTS/CTS;
-- reendereçamento persistente por Commanded Address via BAM;
-- CRC-32/ISO-HDLC, validação de vetores e metadata transacional;
-- entrada remota no bootloader a partir da aplicação;
-- host Python para SLCAN no macOS e SocketCAN no Linux;
-- testes C nativos executados com as configurações dos dois targets;
-- aplicações de referência relocadas para os dois mapas de memória.
+**Demonstração em vídeo:** <https://youtu.be/uh3T_99d-og>
 
-Os ensaios de bancada de 29 e 30 de setembro de 2026 cobrem os dois alvos:
-duas Blue Pill (STM32F103C8) e uma NUCLEO-G0B1RE no mesmo barramento, com
-atualização dirigida de cada placa e recuperação após interrupções. Os
-registros estão em [`Validation/evidence/`](Validation/evidence/). Consulte
-[STM32G0B1RE.md](Docs/STM32G0B1RE.md) antes de gravar a NUCLEO.
+## Sumário
 
-## Mapas de memória
+- [Recursos](#recursos)
+- [Alvos suportados](#alvos-suportados)
+- [Início rápido](#início-rápido)
+- [Uso da ferramenta](#uso-da-ferramenta)
+- [Como a atualização funciona](#como-a-atualização-funciona)
+- [Mapas de memória](#mapas-de-memória)
+- [Integração em uma aplicação](#integração-em-uma-aplicação)
+- [Indicação por LED](#indicação-por-led)
+- [Validação](#validação)
+- [Limitações](#limitações)
+- [Estrutura do repositório](#estrutura-do-repositório)
+- [Documentação](#documentação)
+- [Como citar](#como-citar)
 
-### STM32F103C8Tx
+## Recursos
 
-| Região | Intervalo | Tamanho |
-|---|---:|---:|
-| código do bootloader | `0x08000000..0x08004BFF` | 19 KiB |
-| configuração NAME/SA | `0x08004C00..0x08004FFF` | 1 KiB |
-| aplicação | `0x08005000..0x0800FBFF` | 43 KiB / 44032 bytes |
-| metadata | `0x0800FC00..0x0800FFFF` | 1 KiB |
+- CAN clássico a 500 kbit/s, com quadros estendidos de 29 bits.
+- Descoberta das placas por *Request* / *Address Claimed* e identificação
+  dirigida.
+- Seleção do destinatário pelo NAME, mesmo quando o endereço (SA) muda.
+- Transferência dirigida com DM14, DM15 e DM16 sobre o transporte J1939
+  (RTS/CTS), um bloco por vez.
+- Aceitação da imagem condicionada a tamanho, CRC-32/ISO-HDLC e validação dos
+  vetores iniciais (MSP e *Reset Handler*).
+- Metadados persistentes: uma imagem incompleta não é executada após uma
+  interrupção, e um novo envio pela rede recupera a placa.
+- Entrada remota no bootloader a partir da aplicação em execução.
+- Mudança persistente do endereço preferido por *Commanded Address* (BAM).
+- Núcleo comum sem dependência de HAL, com um adaptador por microcontrolador.
+- Sem sistema operacional, sem alocação dinâmica.
+- Ferramenta para SLCAN (macOS) e SocketCAN (Linux).
+- Testes de software em C e em Python, executados sem hardware.
 
-A aplicação deve ser linkada em `0x08005000`; binários de protótipos internos
-linkados em `0x08004000` não são válidos no formato atual.
+> **Alcance normativo.** O CanLoader implementa um perfil próprio que usa
+> mecanismos de J1939-21 e J1939-81 e um subconjunto de DM14/DM15/DM16 baseado
+> em material público de J1939-73. Não é certificado pela SAE e não deve ser
+> apresentado como implementação integral dessas normas. Sessão, CRC,
+> finalização e troca de modo são comandos próprios no PGN *Proprietary A*
+> (`0xEF00`).
 
-### STM32G0B1RE
+## Alvos suportados
 
-| Região | Intervalo | Tamanho |
-|---|---:|---:|
-| código do bootloader | `0x08000000..0x080077FF` | 30 KiB |
-| configuração NAME/SA | `0x08007800..0x08007FFF` | 2 KiB |
-| aplicação | `0x08008000..0x0807F7FF` | 478 KiB / 489472 bytes |
-| metadata | `0x0807F800..0x0807FFFF` | 2 KiB |
+| Item | STM32F103C8Tx (Blue Pill) | NUCLEO-G0B1RE |
+| --- | --- | --- |
+| Núcleo | Cortex-M3 | Cortex-M0+ |
+| Clock | 72 MHz, PCLK1 36 MHz | 64 MHz, PCLK1 64 MHz |
+| Controlador CAN | bxCAN | FDCAN1 em modo clássico |
+| *Bit timing* | prescaler 4, BS1 13, BS2 4, SJW 1 | prescaler 8, TSEG1 13, TSEG2 2, SJW 2 |
+| Pinos CAN | PA11 RX, PA12 TX | PC4 RX, PC5 TX (AF3) |
+| LED | PC13, ativo em nível baixo | PA5 (LD4), ativo em nível alto |
+| Flash | página de 1 KiB, programação de 2 bytes | página de 2 KiB, programação de 8 bytes |
+| Bloco de dados | 100 bytes | 96 bytes |
 
-A aplicação G0 deve ser linkada em `0x08008000`. Os valores são definidos nos
-headers de target e conferidos pelos dois linker scripts, não inferidos pela
-ferramenta host.
+O microcontrolador precisa de um transceptor CAN externo (a bancada usa o
+SN65HVD230). Ligue CAN_H, CAN_L e a referência de terra, com 120 Ω em cada
+extremidade física do barramento. Os pinos de TX e RX não podem ser ligados
+diretamente ao par diferencial.
 
-## Hardware
+Antes de gravar a NUCLEO, leia [Docs/STM32G0B1RE.md](Docs/STM32G0B1RE.md).
 
-| Item | STM32F103C8Tx | NUCLEO-G0B1RE |
-|---|---|---|
-| núcleo | Cortex-M3 | Cortex-M0+ |
-| clock | 72 MHz, PCLK1 36 MHz | 64 MHz, PCLK1 64 MHz |
-| controlador | bxCAN | FDCAN1 em modo CAN clássico |
-| bit timing | prescaler 4, BS1 13, BS2 4, SJW 1 | prescaler 8, TSEG1 13, TSEG2 2, SJW 2 |
-| pinos | PA11 RX, PA12 TX | PC4 RX, PC5 TX, AF3 |
-| LED | PC13, ativo baixo | PA5/LD4, ativo alto |
-| Flash | erase 1 KiB, programa 2 B | erase 2 KiB, programa 8 B |
+## Início rápido
 
-O STM32 precisa de transceptor CAN externo. Conecte CAN_H, CAN_L e GND comum e
-use 120 Ω em cada extremidade física do barramento. PA11/PA12 não podem ser
-ligados diretamente ao par diferencial.
+### Pré-requisitos
 
-## Bare-metal, CMSIS e HAL
+- GNU Make e `arm-none-eabi-gcc`. O Makefile procura primeiro o toolchain do
+  STM32CubeIDE e, depois, `arm-none-eabi-*` no `PATH`.
+- Python 3.10 ou superior.
+- ST-LINK com STM32CubeIDE ou STM32CubeProgrammer, apenas para a instalação
+  inicial do bootloader.
+- Um adaptador USB–CAN compatível com SLCAN ou SocketCAN.
 
-O CanLoader é bare-metal: não usa RTOS, scheduler, heap ou threads. CMSIS
-fornece startup, definições do núcleo Cortex-M e acesso aos registradores do
-processador. A HAL é usada somente na inicialização dos targets e nos ports de
-CAN, Flash e plataforma; ela não faz parte da máquina de estados nem do
-protocolo comum.
-
-A portabilidade vem dos contratos em `Portable/Inc`, não da HAL. O alvo pode
-implementar esses contratos com HAL, LL ou acesso direto a registradores. A
-regra atual mantém a HAL nos adaptadores STM32 para reduzir o risco de erros em
-clock, Flash e FDCAN, permitindo substituições pontuais quando uma medição de
-tamanho ou tempo justificar. `make check-portability` falha caso uma dependência
-HAL/LL ou de dispositivo STM32 seja introduzida em `Application`, `Protocol`,
-`Portable/Inc` ou `Config`.
-
-## Build e testes
-
-Pré-requisitos principais:
-
-- GNU Make e `arm-none-eabi-gcc`;
-- Python 3.10 ou superior para a ferramenta host;
-- STM32CubeProgrammer/ST-LINK para a instalação inicial;
-- `python-can` e `pyserial` para o host.
-
-Na raiz do repositório, `make all` compila o bootloader e a aplicação de teste
-de todos os targets encontrados em `Targets/*/target.mk`:
+### 1. Compilar
 
 ```sh
-make all
+make all                      # bootloader e aplicação de teste de todos os alvos
+make TARGET=stm32g0b1re all   # somente a NUCLEO-G0B1RE
+make bootloader               # somente o bootloader do alvo padrão (F103)
 ```
 
-O F103 permanece o target padrão para os alvos individuais:
+| Comando | Saída |
+| --- | --- |
+| `make bootloader` | `build/<alvo>/bootloader/CanLoader.{elf,bin,hex,map,list}` |
+| `make test-application` | `build/<alvo>/test-application/canloader_test_app.{elf,bin,hex,map}` |
+| `make APP_VARIANT=2 test-application` | mesma aplicação com outro padrão de LED, em `test-application-2/` |
 
-```sh
-make bootloader
-make test-application
-make test
-```
+### 2. Gravar o bootloader (uma única vez)
 
-Para a NUCLEO-G0B1RE:
+Use as configurações `CanLoader STM32F103C8Tx.launch` e
+`CanLoader NUCLEO-G0B1RE.launch` do STM32CubeIDE. O passo a passo está em
+[Docs/CUBEIDE_LAUNCH.md](Docs/CUBEIDE_LAUNCH.md). Depois disso, a aplicação é
+substituída somente pela rede.
 
-```sh
-make TARGET=stm32g0b1re all
-```
-
-`all-targets` permanece como alias explícito de `all`:
-
-```sh
-make all-targets
-```
-
-Para gravar e depurar pelo STM32CubeIDE, use as configurações
-`CanLoader STM32F103C8Tx.launch` e `CanLoader NUCLEO-G0B1RE.launch`. O passo a
-passo está em [Gravação e depuração pelo STM32CubeIDE](Docs/CUBEIDE_LAUNCH.md).
-
-Artefatos principais:
-
-| Alvo | Saída |
-|---|---|
-| `make all` | bootloader e aplicação de teste de todos os targets em `build/<target>/` |
-| `make bootloader` | `build/stm32f103c8/bootloader/CanLoader.{elf,bin,hex,map,list}` |
-| `make test-application` | `build/stm32f103c8/test-application/canloader_test_app.{elf,bin,hex,map}` |
-| `make TARGET=stm32g0b1re all` | `build/stm32g0b1re/bootloader/CanLoader.*` e `build/stm32g0b1re/test-application/canloader_test_app.*` |
-| `make test-c` | testes nativos em `build/tests/c/` |
-| `make test-python` | serialização, scanner, cliente, TP, retries e CLI |
-| `make check-portability` | verifica que HAL/LL/CMSIS de dispositivo não vazaram para o núcleo comum |
-| `make test` | fronteira de portabilidade, testes C e testes Python |
-
-O Makefile procura primeiro o toolchain empacotado no STM32CubeIDE e depois
-`arm-none-eabi-*` no `PATH`.
-
-## Instalação da CLI
-
-Use Python 3.10+; o Python 3.9 fornecido por versões antigas do Xcode não atende
-ao pacote atual.
+### 3. Instalar a ferramenta
 
 ```sh
 python3.12 -m venv .venv
@@ -169,159 +125,270 @@ python -m pip install -e Tools/canloader
 canloader --version
 ```
 
-Se a criação do ambiente for interrompida, remova ou renomeie apenas aquela
-pasta incompleta e recrie o ambiente. Não tente ativar `.venv/bin/activate`
-antes de o comando `venv` terminar.
-
-## Uso no macOS com SLCAN
-
-No macOS não existe normalmente uma interface `can0`. O canal SLCAN é a porta
-serial do adaptador. Para identificá-la:
+### 4. Descobrir as placas e atualizar uma delas
 
 ```sh
-ls /dev/cu.*
+PORT=/dev/cu.usbmodemXXXX     # porta serial do adaptador SLCAN
+
+canloader ls --interface slcan --channel "$PORT" --bitrate 500000
 ```
 
-Compare a lista antes e depois de conectar o adaptador e prefira `/dev/cu.*` a
-`/dev/tty.*`. Exemplo:
-
-```sh
-canloader ls \
-  --interface slcan \
-  --channel /dev/cu.usbmodem2074318558421 \
-  --bitrate 500000 \
-  --verbose
+```text
+ADDR  NAME                MFG   FUNC  CANLOADER  MODE
+0x80  0x80000000000E30EA     0     0  yes        application
+0x81  0x80000000001663E2     0     0  yes        application
+0x82  0x80000000001719AF     0     0  yes        application
 ```
 
-Todos os quadros do formato atual são estendidos. Em uma captura Lawicel/SLCAN
-eles aparecem como quadros `T`; quadros `t` de 11 bits pertencem ao protótipo
-interno anterior ou a tráfego alheio.
-
-Depois de obter o NAME com `ls`, bloqueie a identidade nas operações mutáveis:
-
 ```sh
-TARGET_NAME=0x8000000000123456
-PORT=/dev/cu.usbmodem2074318558421
-
-canloader info --interface slcan --channel "$PORT" \
-  --address 0x80 --name "$TARGET_NAME"
-
 canloader update build/stm32f103c8/test-application/canloader_test_app.bin \
-  --interface slcan --channel "$PORT" \
-  --address 0x80 --name "$TARGET_NAME" --run
+  --interface slcan --channel "$PORT" --bitrate 500000 \
+  --address 0x82 --name 0x80000000001719AF --run
 ```
 
-`--address` é a rota observada; `--name` é a identidade. Se o target perder uma
-disputa e mudar de SA, execute `ls` novamente e use o SA anunciado para o mesmo
-NAME.
+`--address` é a rota observada no momento; `--name` é a identidade. Se a placa
+perder uma disputa de endereço e mudar de SA, execute `ls` de novo e use o
+endereço anunciado para o mesmo NAME.
 
-## Uso no Linux com SocketCAN
+## Uso da ferramenta
+
+### Comandos
+
+| Comando | Efeito |
+| --- | --- |
+| `canloader ls` | Solicita *Address Claimed* e identifica os nós CanLoader. |
+| `canloader info` | Lê modo, memória, UID, NAME, endereço e dados da imagem. |
+| `canloader update IMAGEM.bin` | Abre a sessão, apaga, escreve, finaliza e verifica. Com `--run`, executa a aplicação. |
+| `canloader verify` | Pede à placa que recalcule e valide a imagem gravada. |
+| `canloader run` | Executa a aplicação, se a imagem for válida. |
+| `canloader reboot` | Pede à aplicação que reinicie no bootloader. |
+| `canloader set-address NOVO_SA` | Envia *Commanded Address* ao NAME selecionado. |
+| `canloader activity` | Lê os contadores de atividade CAN da aplicação de teste. |
+
+Parâmetros comuns: `--address`, `--name`, `--source-address`, `--source-name`,
+`--timeout`, `--transport-timeout`, `--erase-timeout`, `--scan-timeout`,
+`--retries` e `--verbose`. A referência completa está em
+[Tools/canloader/README.md](Tools/canloader/README.md).
+
+### macOS, com SLCAN
+
+No macOS não há interface `can0`: o canal é a porta serial do adaptador.
+Compare `ls /dev/cu.*` antes e depois de conectá-lo e prefira `/dev/cu.*` a
+`/dev/tty.*`.
+
+Todos os quadros do protocolo são estendidos. Em uma captura SLCAN, aparecem
+como quadros `T`; quadros `t`, de 11 bits, são tráfego alheio.
+
+### Linux, com SocketCAN
 
 ```sh
 sudo ip link set can0 down
 sudo ip link set can0 type can bitrate 500000 restart-ms 100
 sudo ip link set can0 up
-ip -details -statistics link show can0
 
 canloader ls --interface socketcan --channel can0
-canloader info --interface socketcan --channel can0 \
-  --address 0x80 --name 0x8000000000123456
 ```
 
-A CLI usa CAN raw e implementa claim/TP em user space. Não compartilhe o mesmo
-Source Address entre essa pilha e um socket `CAN_J1939` do kernel.
+A ferramenta usa quadros CAN brutos e implementa a reivindicação de endereço e
+o transporte em espaço de usuário. Não compartilhe o mesmo endereço de origem
+entre ela e um *socket* `CAN_J1939` do kernel.
 
-## Comandos
-
-| Comando | Efeito |
-|---|---|
-| `canloader ls` | solicita Address Claimed e identifica individualmente nós CanLoader |
-| `canloader info` | lê capabilities, memória, UID, NAME e SA |
-| `canloader update IMAGE.bin` | abre manifest, apaga, escreve, finaliza e verifica |
-| `canloader verify` | recalcula e valida a imagem armazenada |
-| `canloader run` | executa uma aplicação válida |
-| `canloader reboot` | pede à aplicação que reinicie no bootloader |
-| `canloader set-address NEW_SA` | envia Commanded Address ao NAME bloqueado |
-
-Os parâmetros comuns incluem `--address`, `--name`, `--source-address`,
-`--source-name`, `--timeout`, `--transport-timeout`, `--erase-timeout`,
-`--scan-timeout`, `--retries` e `--verbose`. O timeout TP default do host é
-1,5 s, maior que o deadline de progresso de 1,25 s do target.
-
-## Fluxo resumido do update
+## Como a atualização funciona
 
 ```text
-Request/Address Claimed + IDENTIFY
-        -> START_UPDATE(size)
-        -> SET_IMAGE_CRC(crc32)
-        -> DM14 ERASE / DM15 / close
-        -> [DM14 WRITE / DM15 PROCEED / DM16 direto (1..7)
-            ou via TP (8..100) /
-            DM15 COMPLETED / close] × blocos
-        -> FINALIZE
-        -> VERIFY
-        -> RUN opcional
+Request / Address Claimed + IDENTIFY      descoberta e conferência de NAME e SA
+  -> START_UPDATE(tamanho)                abertura da sessão
+  -> SET_IMAGE_CRC(crc32)                 CRC esperado da imagem
+  -> DM14 ERASE / DM15                    apaga só as páginas que a imagem ocupa
+  -> para cada bloco:
+       DM14 WRITE / DM15 PROCEED
+       DM16 (direto, 1 a 7 bytes; ou via TP RTS/CTS, 8 a 100 bytes)
+       DM15 COMPLETED                     bloco gravado e relido
+  -> FINALIZE                             tamanho, CRC na Flash e vetores
+  -> VERIFY
+  -> RUN (opcional)
 ```
 
-O target informa o tamanho do bloco na resposta a `START_UPDATE`: 100 bytes no
-F103 e 96 bytes no G0. O seletor `INFO FLASH_ERASE_UNIT_SIZE` informa a unidade
-usada para calcular o `length` de ERASE: 1024 ou 2048 bytes, respectivamente.
-A sessão proprietária não ocupa o campo `Key/User_Level` de DM14; este perfil
-transmite `0xFFFF`.
+- A placa informa o tamanho do bloco na resposta a `START_UPDATE`: 100 bytes
+  no F103 e 96 bytes no G0. Um bloco de 100 bytes vira uma mensagem DM16 de
+  101 bytes, transportada em 15 quadros, em duas janelas CTS.
+- A escrita é estritamente sequencial e só é aceita na região de aplicação.
+- Antes do apagamento, os metadados passam a indicar atualização em andamento.
+  A partir desse ponto, a imagem anterior deixa de existir: uma falha deixa a
+  placa no bootloader, à espera de um novo envio.
+- O marcador de validade só é gravado depois de conferidos o tamanho, o CRC
+  recalculado sobre a Flash e os vetores iniciais.
 
-## Aplicação e retorno ao bootloader
+O contrato completo das mensagens está em [Docs/PROTOCOL.md](Docs/PROTOCOL.md).
 
-A aplicação deve compartilhar NAME e preferred SA com o bootloader, executar
-Address Claim, responder a `IDENTIFY`/`INFO` e aceitar
-`ENTER_BOOTLOADER=0x33` no PGN Proprietary A dirigido. Ela grava a assinatura
-transitória `0xB007/0x4C44` em backup registers, tenta entregar o ACK e reinicia.
-O bootloader consome a assinatura uma única vez e permanece disponível por 10 s.
+## Mapas de memória
+
+### STM32F103C8Tx (64 KiB)
+
+| Região | Intervalo | Tamanho |
+| --- | ---: | ---: |
+| Código do bootloader | `0x08000000..0x08004BFF` | 19 KiB |
+| Configuração (NAME e SA) | `0x08004C00..0x08004FFF` | 1 KiB |
+| Aplicação | `0x08005000..0x0800FBFF` | 43 KiB (44032 bytes) |
+| Metadados | `0x0800FC00..0x0800FFFF` | 1 KiB |
+
+### STM32G0B1RE (512 KiB)
+
+| Região | Intervalo | Tamanho |
+| --- | ---: | ---: |
+| Código do bootloader | `0x08000000..0x080077FF` | 30 KiB |
+| Configuração (NAME e SA) | `0x08007800..0x08007FFF` | 2 KiB |
+| Aplicação | `0x08008000..0x0807F7FF` | 478 KiB (489472 bytes) |
+| Metadados | `0x0807F800..0x0807FFFF` | 2 KiB |
+
+A aplicação deve ser ligada no início da sua região: `0x08005000` no F103 e
+`0x08008000` no G0. Uma imagem ligada para outro endereço é recusada pela
+validação dos vetores. Os valores vêm dos cabeçalhos de cada alvo e são
+conferidos pelos arquivos de ligação; a ferramenta os lê da placa. Detalhes em
+[Docs/MEMORY_MAP.md](Docs/MEMORY_MAP.md).
+
+## Integração em uma aplicação
+
+Para ser atualizada a partir do seu estado de execução, a aplicação precisa:
+
+1. ser ligada no endereço da região de aplicação e apontar o VTOR para ele;
+2. usar o mesmo NAME e o mesmo endereço preferido do bootloader, e executar a
+   reivindicação de endereço;
+3. responder a `IDENTIFY` e `INFO`;
+4. aceitar `ENTER_BOOTLOADER` (`0x33`) no PGN *Proprietary A* dirigido: gravar
+   a assinatura `0xB007/0x4C44` nos registradores de *backup*, tentar entregar
+   a confirmação e reiniciar.
+
+O bootloader consome essa assinatura uma única vez e permanece disponível por
+10 s. A aplicação de referência em [TestApplication/](TestApplication/)
+implementa esses quatro pontos e serve de modelo.
 
 ```sh
 canloader reboot --interface slcan --channel "$PORT" \
-  --address 0x80 --name "$TARGET_NAME"
+  --address 0x80 --name 0x80000000000E30EA
 ```
 
-## LED
+## Indicação por LED
 
-| Estado | LED do target |
-|---|---|
-| boot window com imagem válida | aceso por até 1500 ms; até 10000 ms após pedido da aplicação |
-| aguardando host | alterna a cada 500 ms |
-| preparação, erase, recepção ou verificação | alterna a cada 125 ms |
-| imagem pronta / handoff | apagado |
-| erro de inicialização | alterna a cada 100 ms |
-| aplicação de referência | duas piscadas curtas e pausa |
-| aplicação detectou handoff com IRQ mascarada | continuamente aceso |
+| Estado | LED da placa |
+| --- | --- |
+| Janela de início, com imagem válida | aceso por até 1,5 s (até 10 s após pedido da aplicação) |
+| Aguardando a ferramenta | alterna a cada 500 ms |
+| Preparação, apagamento, recepção ou verificação | alterna a cada 125 ms |
+| Imagem pronta, antes do salto | apagado |
+| Erro de inicialização | alterna a cada 100 ms |
+| Aplicação de referência (variante 1) | duas piscadas curtas por segundo |
+| Aplicação de referência (variante 2) | aceso continuamente |
+| Aplicação de referência (variante 3) | três piscadas curtas por segundo |
+| Aplicação iniciada com interrupções mascaradas | aceso continuamente |
 
-## Estrutura
+Na variante 2, o LED aceso coincide com o sinal de falha na passagem para a
+aplicação. Para distinguir os dois casos, confirme com `canloader ls` que a
+placa responde em modo aplicação.
+
+## Validação
+
+### Testes de software
+
+```sh
+make test                # portabilidade, testes C e testes Python
+make check-portability   # falha se HAL/LL vazar para o núcleo comum
+make test-c              # testes nativos, em build/tests/c/
+make test-python         # ferramenta: protocolo, transporte, cliente e CLI
+```
+
+Na versão `v1.0.0`: 10 executáveis de teste em C e 86 casos `pytest`
+aprovados. A cobertura de código não foi medida.
+
+### Ensaios em bancada
+
+Duas Blue Pill e uma NUCLEO-G0B1RE no mesmo barramento, com um adaptador
+CANable V2.0 Pro por SLCAN. Cada sessão está registrada em
+[Validation/evidence/](Validation/evidence/), com a saída completa de cada
+comando.
+
+| Ensaio | Resultado |
+| --- | --- |
+| Atualização dirigida das três placas, com as outras duas enviando mensagens a cada 100 ms | Três atualizações concluídas, CRC conferido, contadores de erro CAN em zero |
+| NAME de uma placa com o endereço de outra | Recusado pela ferramenta antes de qualquer operação |
+| Interrupção por encerramento da ferramenta, corte de alimentação e desconexão USB | Placa de volta no bootloader, execução recusada e aplicação recuperada por novo envio |
+| Imagem com ponteiro de pilha inicial nulo (ensaio preliminar) | Transferida, mas recusada na finalização |
+
+| Medida | Valor |
+| --- | --- |
+| Atualização completa, com descoberta e controles | 4,6 a 6,3 s |
+| Vazão útil | 6,1 a 7,8 kB/s |
+| Apagamento da Flash | cerca de 22 ms por página |
+| Bootloader | 16548 bytes (F103) e 18968 bytes (G0) |
+
+Esses resultados são funcionais: uma atualização por placa e uma ocorrência de
+cada interrupção, em um único alvo, com tempos medidos no computador. O plano e
+os critérios estão em [Docs/VALIDATION.md](Docs/VALIDATION.md).
+
+## Limitações
+
+- **Sem autenticação.** O CRC detecta corrupção acidental, não uma imagem
+  adulterada; endereços e mensagens podem ser falsificados por um participante
+  malicioso.
+- **Imagem única.** Não há reversão à versão anterior: depois do apagamento, a
+  recuperação depende de um novo envio.
+- **Proteção por software.** A escrita é restrita à região de aplicação pelo
+  protocolo, não por proteção de hardware da Flash.
+- **Sem certificação SAE** e sem CAN FD.
+- **NAME de desenvolvimento.** É derivado do identificador único do STM32 e não
+  garante unicidade global; em produção, as identidades precisam ser atribuídas
+  de forma controlada.
+- **Avaliação restrita à bancada**, com poucas repetições.
+
+A lista completa, com riscos e fronteiras de conformidade, está em
+[Docs/LIMITATIONS.md](Docs/LIMITATIONS.md).
+
+## Estrutura do repositório
 
 ```text
-Application/             FSM, configuração, metadata, imagem e handoff
-Protocol/                J1939, Address Claim, TP, CanLoader e CRC
+Application/             máquina de estados, configuração, metadados, imagem e salto
+Protocol/                J1939, Address Claim, transporte, comandos CanLoader e CRC
 Portable/Inc/            contratos de CAN, Flash e plataforma
-Portable/stm32f103c8/    port HAL/bxCAN/FPEC/Cortex-M3
-Portable/stm32g0b1re/    port HAL/FDCAN/Flash/Cortex-M0+
-Config/                  mapa, NAME default, limites e timers
-Config/targets/          parâmetros físicos de cada target
-Targets/<target>/         configuração, startup, inicialização e linker
-Tools/canloader/         pacote Python e CLI
-TestApplication/         build comum e fontes relocadas por target
-Tests/                   testes C e Python sem hardware
-Core/Src/                syscalls e sysmem comuns aos dois targets
-Validation/              scripts de sessão registrada e evidências de bancada
-Docs/                    contrato, arquitetura, memória e histórico
+Portable/stm32f103c8/    adaptador HAL / bxCAN / Cortex-M3
+Portable/stm32g0b1re/    adaptador HAL / FDCAN / Cortex-M0+
+Config/                  mapa, NAME padrão, limites e temporizadores
+Targets/<alvo>/          inicialização, startup e arquivo de ligação de cada alvo
+TestApplication/         aplicação de referência, compilada para cada alvo
+Tools/canloader/         pacote Python e linha de comando
+Tests/                   testes C e Python, sem hardware
+Validation/              scripts de registro e evidências dos ensaios
+Docs/                    protocolo, arquitetura, memória e histórico
 ```
+
+A HAL e o CMSIS são usados somente na inicialização e nos adaptadores de cada
+alvo. A portabilidade vem dos contratos em `Portable/Inc`: um novo
+microcontrolador exige implementar esses contratos, revisar o *startup* e o
+arquivo de ligação e repetir os ensaios.
 
 ## Documentação
 
-- [Implementação técnica completa](Docs/IMPLEMENTACAO_BOOTLOADER.md)
-- [Contrato on-wire](Docs/PROTOCOL.md)
-- [Histórico da mudança do protótipo interno](Docs/MIGRATION_V1_TO_V2.md)
-- [Arquitetura e portabilidade](Docs/ARCHITECTURE.md)
-- [Port da NUCLEO-G0B1RE](Docs/STM32G0B1RE.md)
-- [Mapa de memória e formatos persistentes](Docs/MEMORY_MAP.md)
-- [Plano de validação](Docs/VALIDATION.md)
-- [Limitações e ameaças](Docs/LIMITATIONS.md)
-- [Relação com o TCC](Docs/TCC_DIVERGENCES.md)
-- [Histórico de desenvolvimento e dos commits](Docs/HISTORY.md)
+| Documento | Conteúdo |
+| --- | --- |
+| [IMPLEMENTACAO_BOOTLOADER.md](Docs/IMPLEMENTACAO_BOOTLOADER.md) | Descrição técnica completa da implementação |
+| [PROTOCOL.md](Docs/PROTOCOL.md) | Contrato das mensagens no barramento |
+| [ARCHITECTURE.md](Docs/ARCHITECTURE.md) | Arquitetura e portabilidade |
+| [MEMORY_MAP.md](Docs/MEMORY_MAP.md) | Mapas de memória e formatos persistentes |
+| [STM32G0B1RE.md](Docs/STM32G0B1RE.md) | Adaptação para a NUCLEO-G0B1RE |
+| [CUBEIDE_LAUNCH.md](Docs/CUBEIDE_LAUNCH.md) | Gravação e depuração pelo STM32CubeIDE |
+| [VALIDATION.md](Docs/VALIDATION.md) | Plano de validação |
+| [LIMITATIONS.md](Docs/LIMITATIONS.md) | Limitações, riscos e conformidade |
+| [MIGRATION_V1_TO_V2.md](Docs/MIGRATION_V1_TO_V2.md) | Mudança do protótipo de 11 bits para o formato atual |
+| [TCC_DIVERGENCES.md](Docs/TCC_DIVERGENCES.md) | Relação entre o código e a monografia |
+| [HISTORY.md](Docs/HISTORY.md) | Histórico de desenvolvimento e dos commits |
+
+## Como citar
+
+> LOPES, Kevin Azevedo. **Desenvolvimento de um *bootloader* em rede CAN para
+> atualização de *firmware* em microcontroladores STM32**. 2026. Trabalho de
+> Conclusão de Curso (Bacharelado em Engenharia de Computação) – Universidade
+> Tecnológica Federal do Paraná, Pato Branco, 2026.
+
+Orientador: Prof. Dr. Gustavo Weber Denardin.
+
+Os *drivers* em [Drivers/](Drivers/) são da STMicroelectronics e da Arm e
+mantêm as licenças indicadas em seus diretórios.
